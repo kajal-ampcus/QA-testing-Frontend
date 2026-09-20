@@ -1,0 +1,123 @@
+/** Wire types for the QA Platform API. */
+
+export interface Project {
+  has_application_map?: boolean;
+  id: string;
+  name: string;
+  application_url: string | null;
+  /** Kept for backward-compat — the default account's ref. */
+  credential_ref: string | null;
+  /** All named accounts for this project. */
+  accounts?: ProjectAccount[];
+}
+
+/** A named test account attached to a project (backend CredentialCreateResponse shape). */
+export interface ProjectAccount {
+  /** Stable key stored backend-side, e.g. "cred:<uuid>" */
+  credential_ref: string;
+  /** Human-readable label, e.g. "Admin", "Customer", "Manager" (maps to backend `label`) */
+  label: string;
+  /** Role string — same value as label in current implementation */
+  role: string;
+  /** Whether this is the default account for discovery */
+  is_default: boolean;
+  /** ISO timestamp */
+  created_at: string;
+}
+
+export interface Requirement {
+  id: string;
+  project_id: string;
+  req_code: string;
+  version: number;
+  status: string;
+  title: string;
+  description: string;
+  acceptance_criteria: { id: string; text: string; source: string }[];
+  ambiguities: {
+    field: string;
+    issue: string;
+    requires_clarification: boolean;
+  }[];
+  domain_tags: string[];
+}
+
+export interface Approval {
+  id: string;
+  target_type: string;
+  target_id: string;
+  status: string;
+  decided_by: string | null;
+  decided_at: string | null;
+}
+
+export interface AppState {
+  state_code: string;
+  url_pattern: string;
+  fingerprint: string;
+  reached_via: string[];
+  elements: Record<string, unknown>[];
+}
+
+export interface AppMap {
+  id: string;
+  project_id: string;
+  version: number;
+  base_url: string;
+  status: string;
+  termination_reason: string | null;
+  coverage: Record<string, unknown>;
+  /** Which account role was used for this crawl */
+  discovered_as_role?: string | null;
+  states: AppState[];
+}
+
+export interface Job {
+  job_id: string;
+  status: string;
+  result: { status?: string; error?: string; [key: string]: unknown } | null;
+}
+
+export interface TestCase {
+  id: string;
+  tc_code: string;
+  project_id: string;
+  requirement_id: string;
+  requirement_version: number;
+  application_map_id: string;
+  status: string;
+  current_version: number;
+  /** Which role this test case was generated for */
+  role_name?: string | null;
+  current: {
+    version: number;
+    title: string;
+    objective: string;
+    category: string;
+    preconditions: string[];
+    steps: {
+      step_number: number;
+      action: string;
+      target: {
+        state_code?: string;
+        element_code?: string;
+        element_name?: string;
+        element_role?: string;
+      };
+      value?: string;
+      expected?: string;
+    }[];
+    expected_result: string;
+    test_data: Record<string, unknown>;
+    traceability: string[];
+    confidence: number;
+  };
+}
+
+export interface Generation {
+  generated: number;
+  test_cases: TestCase[];
+  uncovered_acs: string[];
+  partial_pairing_acs: string[];
+  needs_review_test_cases: string[];
+}
