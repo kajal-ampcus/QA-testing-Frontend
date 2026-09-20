@@ -24,6 +24,7 @@ import {
   EmptyState,
 } from "../../components/ui";
 import { human } from "../../utils/workflow";
+import { exportCompleteExcelReport } from "./exportExcel";
 export function Generate({
   requirement: r,
   map,
@@ -151,6 +152,8 @@ export default function TestCases({
   const [confidence, setConfidence] = useState("");
   const [reqId, setReqId] = useState("");
   const [selected, setSelected] = useState<TestCase>();
+  const [exportingExcel, setExportingExcel] = useState(false);
+  const [exportError, setExportError] = useState("");
   const filtered = tests.filter(
     (t) =>
       `${t.tc_code} ${t.current.title} ${t.current.traceability.join(" ")}`
@@ -179,6 +182,19 @@ export default function TestCases({
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
+  const exportExcel = async () => {
+    setExportError("");
+    setExportingExcel(true);
+    try {
+      await exportCompleteExcelReport({ tests, requirements, map, result });
+    } catch (error) {
+      setExportError(
+        error instanceof Error ? error.message : "Excel export failed.",
+      );
+    } finally {
+      setExportingExcel(false);
+    }
+  };
   return (
     <>
       <Card className="test-card">
@@ -192,15 +208,27 @@ export default function TestCases({
             </h2>
             <p>Traceable scenarios. Clear intent. Ready for your review.</p>
           </div>
-          <Button
-            variant="secondary"
-            onClick={exportTests}
-            disabled={!filtered.length}
-          >
-            <Download size={15} />
-            Export JSON
-          </Button>
+          <div className="actions">
+            <Button
+              variant="secondary"
+              onClick={exportTests}
+              disabled={!filtered.length}
+            >
+              <Download size={15} />
+              Export JSON
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={exportExcel}
+              disabled={!tests.length}
+              busy={exportingExcel}
+            >
+              <Download size={15} />
+              Export Excel
+            </Button>
+          </div>
         </div>
+        {exportError && <p className="notice error">{exportError}</p>}
         {result &&
           (result.uncovered_acs.length > 0 ||
             result.partial_pairing_acs.length > 0 ||

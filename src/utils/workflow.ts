@@ -14,7 +14,7 @@ export function nextStage(
 ) {
   if (!requirement || requirement.ambiguities.length) return 0;
   if (requirement.status !== "APPROVED") return 1;
-  if (!map || map.status !== "COMPLETE") return 2;
+  if (!map || !["COMPLETE", "PARTIAL"].includes(map.status)) return 2;
   if (
     tests.some(
       (t) =>

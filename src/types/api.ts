@@ -57,6 +57,7 @@ export interface AppState {
   fingerprint: string;
   reached_via: string[];
   elements: Record<string, unknown>[];
+  evidence_ref?: string | null;
 }
 
 export interface AppMap {
@@ -70,6 +71,26 @@ export interface AppMap {
   /** Which account role was used for this crawl */
   discovered_as_role?: string | null;
   states: AppState[];
+  /** Populated when status is FAILED or PARTIAL */
+  diagnostic_evidence?: DiscoveryDiagnostic | null;
+}
+
+/** Structured failure evidence — tells the developer exactly what went wrong. */
+export interface DiscoveryDiagnostic {
+  auth_attempted: boolean;
+  auth_succeeded: boolean;
+  /** Human-readable login failure message if auth failed */
+  login_error: string | null;
+  /** Path to the screenshot taken at time of failure */
+  screenshot_ref: string | null;
+  /** Console errors and warnings captured from the browser */
+  console_errors: { level: string; text: string }[];
+  /** Non-2xx network responses observed during crawl */
+  network_errors: { method: string; url: string; status: string }[];
+  /** Actions that threw exceptions during replay */
+  failed_actions: { action?: string; phase?: string; error: string }[];
+  /** Human-readable explanation of why discovery ended */
+  termination_detail: string | null;
 }
 
 export interface Job {

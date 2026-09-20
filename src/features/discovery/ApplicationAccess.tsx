@@ -90,9 +90,15 @@ function AccountForm({
         role_name: roleName.trim() || "Default",
         is_default: isDefault,
         ...(selectors.login_url ? { login_url: selectors.login_url } : {}),
-        ...(selectors.username_selector ? { username_selector: selectors.username_selector } : {}),
-        ...(selectors.password_selector ? { password_selector: selectors.password_selector } : {}),
-        ...(selectors.submit_selector ? { submit_selector: selectors.submit_selector } : {}),
+        ...(selectors.username_selector
+          ? { username_selector: selectors.username_selector }
+          : {}),
+        ...(selectors.password_selector
+          ? { password_selector: selectors.password_selector }
+          : {}),
+        ...(selectors.submit_selector
+          ? { submit_selector: selectors.submit_selector }
+          : {}),
       };
       if (existing) {
         return api.updateAccount(projectId, existing.credential_ref, {
@@ -132,7 +138,7 @@ function AccountForm({
             value={roleName}
             onChange={(e) => setRoleName(e.target.value)}
             placeholder="e.g. Admin, Customer, Manager"
-            required
+
             maxLength={60}
             autoFocus={!isEdit}
             list="role-suggestions"
@@ -152,7 +158,7 @@ function AccountForm({
       <label>
         Email / Username
         <input
-          type="email"
+          type="text"
           value={username}
           onChange={(e) => setUsername(e.target.value)}
           placeholder="test@example.com"
@@ -192,7 +198,9 @@ function AccountForm({
       </label>
 
       {/* Default toggle */}
-      <label style={{ flexDirection: "row", alignItems: "center", gap: "10px" }}>
+      <label
+        style={{ flexDirection: "row", alignItems: "center", gap: "10px" }}
+      >
         <input
           type="checkbox"
           style={{ width: "auto" }}
@@ -205,7 +213,9 @@ function AccountForm({
       {/* Custom login selectors */}
       <details
         open={showSelectors}
-        onToggle={(e) => setShowSelectors((e.target as HTMLDetailsElement).open)}
+        onToggle={(e) =>
+          setShowSelectors((e.target as HTMLDetailsElement).open)
+        }
       >
         <summary>Custom login selectors (optional)</summary>
         <div className="form-grid" style={{ marginTop: "16px" }}>
@@ -328,7 +338,10 @@ function AccountRow({
             minWidth: 0,
           }}
         >
-          <div className="heading-icon" style={{ width: "32px", height: "32px" }}>
+          <div
+            className="heading-icon"
+            style={{ width: "32px", height: "32px" }}
+          >
             <UserCircle size={17} />
           </div>
           <div style={{ minWidth: 0 }}>
@@ -409,10 +422,7 @@ function AccountRow({
       </div>
 
       {del.error && (
-        <div
-          style={{ marginTop: "8px" }}
-          onClick={(e) => e.stopPropagation()}
-        >
+        <div style={{ marginTop: "8px" }} onClick={(e) => e.stopPropagation()}>
           <ErrorState error={del.error} />
         </div>
       )}
@@ -470,7 +480,13 @@ export function ApplicationAccess({
         </div>
         <div style={{ flex: 1 }}>
           <h3 style={{ margin: 0 }}>Application access</h3>
-          <p style={{ margin: "4px 0 0", fontSize: "11px", color: "var(--muted)" }}>
+          <p
+            style={{
+              margin: "4px 0 0",
+              fontSize: "11px",
+              color: "var(--muted)",
+            }}
+          >
             {list.length > 0
               ? `${list.length} test account${list.length > 1 ? "s" : ""} configured`
               : "No test accounts yet"}
@@ -489,20 +505,37 @@ export function ApplicationAccess({
 
       {open && (
         <>
-          <p className="muted" style={{ fontSize: "12px", marginBottom: "16px" }}>
+          <p
+            className="muted"
+            style={{ fontSize: "12px", marginBottom: "16px" }}
+          >
             Add a test account for each role you want to discover. Select which
             account to use before starting discovery — its role will be recorded
             on the application map and generated test cases.
           </p>
 
           {/* Error loading accounts */}
-          {accounts.error && !(accounts.error instanceof ApiError && accounts.error.status === 404) && (
-            <ErrorState error={accounts.error} retry={() => accounts.refetch()} />
-          )}
+          {accounts.error &&
+            !(
+              accounts.error instanceof ApiError &&
+              accounts.error.status === 404
+            ) && (
+              <ErrorState
+                error={accounts.error}
+                retry={() => accounts.refetch()}
+              />
+            )}
 
           {/* Account list */}
           {list.length > 0 && (
-            <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginBottom: "16px" }}>
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: "10px",
+                marginBottom: "16px",
+              }}
+            >
               {list.map((account) => (
                 <AccountRow
                   key={account.credential_ref}
@@ -520,8 +553,14 @@ export function ApplicationAccess({
 
           {/* No accounts yet */}
           {list.length === 0 && !adding && (
-            <div className="notice" style={{ display: "flex", gap: "10px", marginBottom: "16px" }}>
-              <AlertCircle size={16} style={{ flexShrink: 0, marginTop: "2px" }} />
+            <div
+              className="notice"
+              style={{ display: "flex", gap: "10px", marginBottom: "16px" }}
+            >
+              <AlertCircle
+                size={16}
+                style={{ flexShrink: 0, marginTop: "2px" }}
+              />
               <div>
                 <strong>No test accounts yet</strong>
                 <p style={{ margin: "4px 0 0", fontSize: "12px" }}>
@@ -534,7 +573,14 @@ export function ApplicationAccess({
 
           {/* Add account form */}
           {adding ? (
-            <div className="card" style={{ margin: "0", border: "1px solid #c5d9b5", background: "#fafdf7" }}>
+            <div
+              className="card"
+              style={{
+                margin: "0",
+                border: "1px solid #c5d9b5",
+                background: "#fafdf7",
+              }}
+            >
               <div style={{ marginBottom: "18px" }}>
                 <h3 style={{ margin: "0 0 4px" }}>Add test account</h3>
                 <p className="muted" style={{ margin: 0, fontSize: "12px" }}>

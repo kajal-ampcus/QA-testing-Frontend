@@ -2,7 +2,7 @@ import { lazy, Suspense, useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
 import { ArrowRight, Plus, RefreshCw, ExternalLink } from "lucide-react";
-import { api } from "../api/client";
+import { api, ApiError } from "../api/client";
 import { useAction } from "../hooks/useAction";
 import { activeJob, nextStage, stages } from "../utils/workflow";
 import { Shell } from "../features/projects/Projects";
@@ -61,7 +61,25 @@ export default function Workspace({ id }: { id: string }) {
         : activeJob(q.state.data?.status) || !q.state.data
           ? 2000
           : false,
+    retry: (failCount, err) => {
+      // Never retry a 404 — the arq job has expired from Redis.
+      // Let the useEffect below clear it automatically.
+      if (err instanceof ApiError && err.status === 404) return false;
+      return failCount < 2;
+    },
   });
+
+  // Auto-clear an expired job (404) from localStorage so the user doesn't
+  // have to manually click "Clear expired job" every time they return to
+  // a project whose last discovery job has aged out of Redis.
+  useEffect(() => {
+    if (job.error instanceof ApiError && job.error.status === 404) {
+      setJobId("");
+      writeStored(`arc:job:${id}`, "");
+    }
+  }, [job.error, id]);
+
+
   const running =
     !!jobId && !job.error && (!job.data || activeJob(job.data.status));
   const project = useQuery({
@@ -113,7 +131,7 @@ export default function Workspace({ id }: { id: string }) {
       ? 0
       : r.status !== "APPROVED"
         ? 1
-        : map.data?.status === "COMPLETE" && !running
+        : ["COMPLETE", "PARTIAL"].includes(map.data?.status || "") && !running
           ? 5
           : map.data
             ? 3
@@ -181,7 +199,7 @@ export default function Workspace({ id }: { id: string }) {
   const complete = [
     !!r && !r.ambiguities.length,
     r?.status === "APPROVED",
-    map.data?.status === "COMPLETE" && !running,
+    ["COMPLETE", "PARTIAL"].includes(map.data?.status || "") && !running,
     !!map.data && (reviewed === map.data.id || currentTests.length > 0),
     currentTests.length > 0,
     currentTests.length > 0,
@@ -351,7 +369,7 @@ export default function Workspace({ id }: { id: string }) {
                   onRetry={() => navigateStage(2)}
                 />
               )}{" "}
-              {stage === 4 && r && map.data?.status === "COMPLETE" && (
+              {stage === 4 && r && map.data && ["COMPLETE", "PARTIAL"].includes(map.data.status) && (
                 <Generate
                   requirement={r}
                   map={map.data}

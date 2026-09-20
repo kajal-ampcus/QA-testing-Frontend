@@ -25,11 +25,33 @@ export function pathEdges(states: AppState[]) {
   return states.flatMap((state) => {
     if (!state.reached_via.length) return [];
     const prefix = state.reached_via.slice(0, -1);
-    const parents = states.filter(
+    let parents = states.filter(
       (p) =>
         p.state_code !== state.state_code &&
         JSON.stringify(p.reached_via) === JSON.stringify(prefix),
     );
+    // Older maps can contain more than one phase-entry state with an empty
+    // path. Resolve a public link transition from the observed href instead
+    // of dropping an otherwise valid edge as ambiguous.
+    if (parents.length > 1) {
+      const childPath = new URL(
+        state.url_pattern,
+        "https://placeholder.invalid",
+      ).pathname;
+      const hrefParents = parents.filter((parent) =>
+        parent.elements.some((element) => {
+          if (element.role !== "link" || typeof element.url !== "string") {
+            return false;
+          }
+          try {
+            return new URL(element.url, "https://placeholder.invalid").pathname === childPath;
+          } catch {
+            return false;
+          }
+        }),
+      );
+      if (hrefParents.length === 1) parents = hrefParents;
+    }
     return parents.length === 1
       ? [
           {

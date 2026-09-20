@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { readFile } from "node:fs/promises";
 import type {
   Project,
   Requirement,
@@ -427,6 +428,16 @@ test("complete journey: create, clarify, approve, discover, map, generate, inspe
   const download = page.waitForEvent("download");
   await page.getByRole("button", { name: "Export JSON" }).click();
   expect((await download).suggestedFilename()).toBe("test-cases.json");
+  const excelDownloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Export Excel" }).click();
+  const excelDownload = await excelDownloadPromise;
+  expect(excelDownload.suggestedFilename()).toMatch(
+    /^qa-complete-report-\d{4}-\d{2}-\d{2}\.xlsx$/,
+  );
+  const excelPath = await excelDownload.path();
+  expect(excelPath).toBeTruthy();
+  const excelBytes = await readFile(excelPath!);
+  expect(excelBytes.subarray(0, 2).toString("ascii")).toBe("PK");
   expect(await page.evaluate(() => JSON.stringify(localStorage))).not.toContain(
     "test-password",
   );

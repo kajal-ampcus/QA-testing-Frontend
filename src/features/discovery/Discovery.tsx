@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Radar, ArrowRight, RefreshCw } from "lucide-react";
+import { Radar, RefreshCw } from "lucide-react";
 import { api, ApiError } from "../../api/client";
 import { useAction } from "../../hooks/useAction";
 import { activeJob, human } from "../../utils/workflow";
@@ -14,6 +14,7 @@ import {
   Timeline,
 } from "../../components/ui";
 import { ApplicationAccess } from "./ApplicationAccess";
+import LiveDiscoveryGraph from "./LiveDiscoveryGraph";
 
 export default function Discovery({
   project,
@@ -123,18 +124,26 @@ export default function Discovery({
             )}
           </>
         ) : running ? (
-          <ProgressIndicator
-            label={
-              job?.status === "in_progress"
-                ? "Exploring your application"
-                : "Waiting for the discovery worker"
-            }
-            description={
-              job?.status === "in_progress"
-                ? "The browser is discovering application states. Observations appear as they are saved."
-                : "Discovery has been queued. This page updates automatically."
-            }
-          />
+          <>
+            <ProgressIndicator
+              label={
+                job?.status === "in_progress"
+                  ? "Exploring your application"
+                  : "Waiting for the discovery worker"
+              }
+              description={
+                job?.status === "in_progress"
+                  ? "The browser is discovering application states. Observations appear as they are saved."
+                  : "Discovery has been queued. This page updates automatically."
+              }
+            />
+            <LiveDiscoveryGraph
+              states={map?.states ?? []}
+              jobStatus={job?.status}
+              stateCount={map?.states.length ?? 0}
+              elementCount={map?.states.reduce((n, s) => n + s.elements.length, 0) ?? 0}
+            />
+          </>
         ) : null}
 
         {/* Map metrics */}
