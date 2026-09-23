@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Radar, RefreshCw } from "lucide-react";
+import { Radar, RefreshCw, Square } from "lucide-react";
 import { api, ApiError } from "../../api/client";
 import { useAction } from "../../hooks/useAction";
 import { activeJob, human } from "../../utils/workflow";
@@ -26,6 +26,7 @@ export default function Discovery({
   onNext,
   refreshJob,
   clearJob,
+  onStopped,
 }: {
   project: Project;
   requirement: Requirement;
@@ -36,11 +37,14 @@ export default function Discovery({
   onNext: () => void;
   refreshJob: () => void;
   clearJob: () => void;
+  onStopped: () => void;
 }) {
   const [url, setUrl] = useState(project.application_url || "");
   const [pages, setPages] = useState(150);
   const [depth, setDepth] = useState(6);
   const [duration, setDuration] = useState(900);
+  const [workerLimit, setWorkerLimit] = useState(3);
+  const [automaticLimits, setAutomaticLimits] = useState(true);
 
   /**
    * credential_ref of the account chosen for this run.
@@ -63,9 +67,16 @@ export default function Discovery({
         max_pages: pages,
         max_depth: depth,
         max_duration_seconds: duration,
+        worker_limit: workerLimit,
+        automatic_limits: automaticLimits,
         credential_ref: selectedRef ?? undefined,
       }),
     (data) => onStarted(data.job_id),
+  );
+  const stopDiscovery = useAction(
+    project.id,
+    () => api.cancelDiscovery(job!.job_id),
+    onStopped,
   );
 
   const running =
@@ -143,6 +154,19 @@ export default function Discovery({
               stateCount={map?.states.length ?? 0}
               elementCount={map?.states.reduce((n, s) => n + s.elements.length, 0) ?? 0}
             />
+            <div className="actions">
+              <Button
+                type="button"
+                variant="secondary"
+                busy={stopDiscovery.isPending}
+                disabled={!job?.job_id}
+                onClick={() => stopDiscovery.mutate()}
+              >
+                <Square size={15} />
+                Stop discovery
+              </Button>
+            </div>
+            {stopDiscovery.error && <ErrorState error={stopDiscovery.error} />}
           </>
         ) : null}
 
@@ -262,7 +286,20 @@ export default function Discovery({
 
             {/* Crawl limits */}
             <details>
-              <summary>Discovery limits</summary>
+              <summary>Discovery settings</summary>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={automaticLimits}
+                  onChange={(e) => setAutomaticLimits(e.target.checked)}
+                />
+                Automatic discovery (recommended)
+              </label>
+              <p className="field-hint">
+                Continues until no new unique pages or actions remain. Internal
+                circuit breakers and Stop discovery still protect the worker.
+              </p>
+              {!automaticLimits && (
               <div className="form-grid three">
                 <label>
                   Maximum pages
@@ -295,6 +332,18 @@ export default function Discovery({
                   />
                 </label>
               </div>
+              )}
+              <label>
+                Parallel browser workers
+                <input
+                  type="number"
+                  min={1}
+                  max={5}
+                  required
+                  value={workerLimit}
+                  onChange={(e) => setWorkerLimit(+e.target.value)}
+                />
+              </label>
             </details>
 
             {discover.error && <ErrorState error={discover.error} />}

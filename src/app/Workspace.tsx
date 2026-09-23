@@ -157,6 +157,23 @@ export default function Workspace({ id }: { id: string }) {
     () => api.generate(id, r!.id, map.data!.id),
     () => navigateStage(5),
   );
+  const coverageGeneration = useAction(
+    id,
+    () => {
+      const source = coverageGeneration.data || generation.data;
+      const targets: Record<string, string[]> = {};
+      for (const acId of source?.uncovered_acs || []) {
+        targets[acId] = ["POSITIVE", "NEGATIVE"];
+      }
+      for (const gap of source?.partial_pairing_acs || []) {
+        const [acId, missing] = gap.split(": missing ");
+        if (acId && missing) {
+          targets[acId] = [...new Set([...(targets[acId] || []), ...missing.split("/")])];
+        }
+      }
+      return api.generate(id, r!.id, map.data!.id, targets);
+    },
+  );
   useEffect(() => {
     if (!generation.isPending) return;
     const warn = (e: BeforeUnloadEvent) => {
@@ -167,6 +184,7 @@ export default function Workspace({ id }: { id: string }) {
   }, [generation.isPending]);
   const select = (value: string) => {
     generation.reset();
+    coverageGeneration.reset();
     setParams({ requirement: value });
   };
   const onSaved = (saved: Requirement) => {
@@ -351,6 +369,12 @@ export default function Workspace({ id }: { id: string }) {
                     setJobId("");
                     writeStored(`arc:job:${id}`, "");
                   }}
+                  onStopped={() => {
+                    setJobId("");
+                    writeStored(`arc:job:${id}`, "");
+                    void project.refetch();
+                    void map.refetch();
+                  }}
                   onStarted={(job) => {
                     setJobId(job);
                     writeStored(`arc:job:${id}`, job);
@@ -385,7 +409,10 @@ export default function Workspace({ id }: { id: string }) {
                   tests={tests.data || []}
                   requirements={all}
                   map={map.data}
-                  result={generation.data}
+                  result={coverageGeneration.data || generation.data}
+                  completingCoverage={coverageGeneration.isPending}
+                  coverageError={coverageGeneration.error}
+                  onCompleteCoverage={() => coverageGeneration.mutate()}
                 />
               )}{" "}
               {stage === 3 && !map.data && (

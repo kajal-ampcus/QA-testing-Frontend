@@ -22,11 +22,12 @@ async function request<T>(
   path: string,
   body?: unknown,
   signal?: AbortSignal,
+  method?: "GET" | "POST" | "DELETE",
 ): Promise<T> {
   const response = await fetch(
     `${(import.meta.env.VITE_API_BASE_URL || "/api/v1").replace(/\/$/, "")}${path}`,
     {
-      method: body === undefined ? "GET" : "POST",
+      method: method ?? (body === undefined ? "GET" : "POST"),
       headers:
         body === undefined ? undefined : { "Content-Type": "application/json" },
       body: body === undefined ? undefined : JSON.stringify(body),
@@ -121,6 +122,8 @@ export const api = {
       max_pages: number;
       max_depth: number;
       max_duration_seconds: number;
+      worker_limit?: number;
+      automatic_limits?: boolean;
       /** credential_ref for the account to use for this crawl */
       credential_ref?: string | null;
     },
@@ -135,6 +138,14 @@ export const api = {
       `/application-maps/jobs/${encodeURIComponent(id)}`,
       undefined,
       signal,
+    ),
+
+  cancelDiscovery: (id: string) =>
+    request<{ job_id: string; status: string }>(
+      `/application-maps/jobs/${encodeURIComponent(id)}`,
+      undefined,
+      undefined,
+      "DELETE",
     ),
 
   // ── Credentials (multi-account) ───────────────────────────
@@ -246,9 +257,15 @@ export const api = {
   tests: (id: string, signal?: AbortSignal) =>
     request<TestCase[]>(`/test-cases/projects/${id}`, undefined, signal),
 
-  generate: (id: string, requirement_id: string, application_map_id: string) =>
+  generate: (
+    id: string,
+    requirement_id: string,
+    application_map_id: string,
+    target_categories?: Record<string, string[]>,
+  ) =>
     request<Generation>(`/test-cases/projects/${id}/generate`, {
       requirement_id,
       application_map_id,
+      ...(target_categories ? { target_categories } : {}),
     }),
 };

@@ -140,11 +140,17 @@ export default function TestCases({
   requirements,
   map,
   result,
+  completingCoverage,
+  coverageError,
+  onCompleteCoverage,
 }: {
   tests: TestCase[];
   requirements: Requirement[];
   map?: AppMap | null;
   result?: Generation;
+  completingCoverage?: boolean;
+  coverageError?: unknown;
+  onCompleteCoverage?: () => void;
 }) {
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("");
@@ -229,6 +235,7 @@ export default function TestCases({
           </div>
         </div>
         {exportError && <p className="notice error">{exportError}</p>}
+        {!!coverageError && <ErrorState error={coverageError} />}
         {result &&
           (result.uncovered_acs.length > 0 ||
             result.partial_pairing_acs.length > 0 ||
@@ -252,6 +259,14 @@ export default function TestCases({
                   Flagged tests: {result.needs_review_test_cases.join(", ")}
                 </p>
               )}
+              {(result.uncovered_acs.length > 0 ||
+                result.partial_pairing_acs.length > 0) &&
+                onCompleteCoverage && (
+                  <Button onClick={onCompleteCoverage} busy={completingCoverage}>
+                    <Sparkles size={16} />
+                    Review and generate missing test cases
+                  </Button>
+                )}
             </div>
           )}
         <div className="table-toolbar">
