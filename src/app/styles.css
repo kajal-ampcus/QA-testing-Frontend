@@ -1252,6 +1252,24 @@ ol {
   color: #99a38f;
   text-transform: lowercase;
 }
+.criteria-content {
+  flex: 1;
+  min-width: 0;
+}
+.criteria-edit {
+  flex-shrink: 0;
+  align-self: flex-start;
+  margin-top: 2px;
+  opacity: 0;
+  transition: opacity var(--fast);
+}
+.criteria > div:hover .criteria-edit,
+.criteria-edit:focus-visible {
+  opacity: 1;
+}
+.criteria-content > .badge {
+  margin-left: 8px;
+}
 .clarification {
   margin: 23px 0;
   padding: 20px;

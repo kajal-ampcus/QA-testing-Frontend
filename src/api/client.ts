@@ -83,6 +83,14 @@ export const api = {
       })),
     }),
 
+  editAcceptanceCriteria: (
+    requirementId: string,
+    items: { id: string; text: string }[],
+  ) =>
+    request<Requirement>(`/requirements/${requirementId}/acceptance-criteria`, {
+      items,
+    }),
+
   // ── Approvals ─────────────────────────────────────────────
   approvals: (id: string, signal?: AbortSignal) =>
     request<Approval[]>(
