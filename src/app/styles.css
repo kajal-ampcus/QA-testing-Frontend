@@ -743,6 +743,22 @@ ol {
   border-radius: 10px;
   color: #7b9667;
 }
+.project-delete {
+  margin-left: auto;
+  opacity: 0;
+  transition:
+    opacity var(--fast),
+    background var(--fast),
+    color var(--fast);
+}
+.project-card:hover .project-delete,
+.project-delete:focus-visible {
+  opacity: 1;
+}
+.project-delete:hover {
+  background: #fcf0ec;
+  color: var(--danger);
+}
 .project-card h3 {
   font-size: 15px;
   margin-bottom: 9px;
@@ -1194,6 +1210,15 @@ ol {
   background: #f1f5ec;
   color: #829371;
   border: 1px solid #e5ebdd;
+}
+.tag > button {
+  display: inline-flex;
+  align-items: center;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  margin-left: 6px;
+  color: inherit;
 }
 .mono {
   font-family: ui-monospace, SFMono-Regular, Consolas, monospace;

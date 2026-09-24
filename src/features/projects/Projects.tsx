@@ -12,8 +12,10 @@ import {
   Check,
   Command,
   FolderOpen,
+  Trash2,
 } from "lucide-react";
 import { api } from "../../api/client";
+import type { Project } from "../../types/api";
 import {
   Button,
   Card,
@@ -106,6 +108,7 @@ export default function Projects() {
   });
   const [search, setSearch] = useState("");
   const [create, setCreate] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<Project | null>(null);
   const navigate = useNavigate();
   const client = useQueryClient();
   const mutation = useMutation({
@@ -113,6 +116,13 @@ export default function Projects() {
     onSuccess: async (p) => {
       await client.invalidateQueries({ queryKey: ["projects"] });
       navigate(`/projects/${p.id}`);
+    },
+  });
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => api.deleteProject(id),
+    onSuccess: async () => {
+      setDeleteTarget(null);
+      await client.invalidateQueries({ queryKey: ["projects"] });
     },
   });
   const filtered =
@@ -226,6 +236,19 @@ export default function Projects() {
                 <div className="project-icon">
                   <FolderOpen size={23} />
                 </div>
+                <button
+                  type="button"
+                  className="icon-button project-delete"
+                  aria-label={`Delete ${p.name}`}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    deleteMutation.reset();
+                    setDeleteTarget(p);
+                  }}
+                >
+                  <Trash2 size={16} />
+                </button>
                 <ArrowUpRight size={18} />
               </div>
               <h3>{p.name}</h3>
@@ -290,6 +313,38 @@ export default function Projects() {
               Create project <ArrowRight size={16} />
             </Button>
           </form>
+        </DetailDrawer>
+      )}
+      {deleteTarget && (
+        <DetailDrawer
+          title="Delete this project?"
+          onClose={() => {
+            if (!deleteMutation.isPending) setDeleteTarget(null);
+          }}
+        >
+          <p className="muted">
+            This permanently deletes <strong>{deleteTarget.name}</strong> and
+            all of its requirements, test cases, application maps, and
+            history. This cannot be undone.
+          </p>
+          {deleteMutation.error && <ErrorState error={deleteMutation.error} />}
+          <div className="actions">
+            <Button
+              variant="secondary"
+              onClick={() => setDeleteTarget(null)}
+              disabled={deleteMutation.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="secondary"
+              busy={deleteMutation.isPending}
+              onClick={() => deleteMutation.mutate(deleteTarget.id)}
+            >
+              <Trash2 size={16} />
+              Delete project
+            </Button>
+          </div>
         </DetailDrawer>
       )}
     </Shell>

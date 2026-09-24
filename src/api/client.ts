@@ -60,6 +60,9 @@ export const api = {
   createProject: (body: { name: string; application_url: string }) =>
     request<Project>("/projects", body),
 
+  deleteProject: (id: string) =>
+    request<void>(`/projects/${id}`, undefined, undefined, "DELETE"),
+
   // ── Requirements ──────────────────────────────────────────
   requirements: (id: string, signal?: AbortSignal) =>
     request<Requirement[]>(`/requirements/projects/${id}`, undefined, signal),

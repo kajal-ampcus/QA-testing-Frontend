@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { ArrowRight, FileText, Plus, Pencil, Check } from "lucide-react";
+import { useRef, useState } from "react";
+import { ArrowRight, FileText, Plus, Pencil, Check, Upload, X } from "lucide-react";
 import type { Requirement } from "../../types/api";
 import { api } from "../../api/client";
 import { useAction } from "../../hooks/useAction";
@@ -24,6 +24,9 @@ export default function Requirements({
 }) {
   const [editing, setEditing] = useState(!r);
   const [raw, setRaw] = useState(r?.description || "");
+  const [file, setFile] = useState<File | null>(null);
+  const [fileError, setFileError] = useState("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [reviewer, setReviewer] = useState("");
   const [decisions, setDecisions] = useState<string[]>(
     r?.ambiguities.map(() => "") || [],
@@ -34,6 +37,7 @@ export default function Requirements({
       r ? api.revise(r.id, text) : api.createRequirement(projectId, text),
     (result) => {
       setEditing(false);
+      setFile(null);
       onSaved(result);
     },
   );
@@ -66,25 +70,75 @@ export default function Requirements({
         </div>
         {editing ? (
           <form
-            onSubmit={(e) => {
+            onSubmit={async (e) => {
               e.preventDefault();
-              save.mutate(raw.trim());
+              const text = raw.trim();
+              if (text) {
+                save.mutate(text);
+                return;
+              }
+              if (file) {
+                setFileError("");
+                const content = (await file.text()).trim();
+                if (!content) {
+                  setFileError("That file appears to be empty.");
+                  return;
+                }
+                save.mutate(content);
+              }
             }}
           >
             <label>
               Requirement description
               <textarea
                 rows={11}
-                required
                 value={raw}
                 onChange={(e) => setRaw(e.target.value)}
                 placeholder="As a customer, I want to sign in securely so that I can access my account. Include expected behavior, business rules, and edge cases…"
               />
             </label>
+            <div className="field-hint">
+              Or upload a document instead —{" "}
+              <button
+                type="button"
+                className="text-button"
+                onClick={() => fileInputRef.current?.click()}
+              >
+                <Upload size={13} />
+                {file ? "Choose a different file" : "Choose file"}
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".txt,.md,text/plain,text/markdown"
+                className="sr-only"
+                onChange={(e) => {
+                  setFileError("");
+                  setFile(e.target.files?.[0] || null);
+                }}
+              />
+              {file && (
+                <span className="tag">
+                  {file.name}
+                  <button
+                    type="button"
+                    aria-label="Remove file"
+                    onClick={() => {
+                      setFile(null);
+                      setFileError("");
+                      if (fileInputRef.current) fileInputRef.current.value = "";
+                    }}
+                  >
+                    <X size={12} />
+                  </button>
+                </span>
+              )}
+            </div>
             <p className="field-hint">
               AI will structure your requirement, extract acceptance criteria,
               and flag anything that needs clarification.
             </p>
+            {fileError && <ErrorState error={fileError} />}
             {save.error && <ErrorState error={save.error} />}
             <div className="actions">
               {r && (
@@ -98,7 +152,7 @@ export default function Requirements({
               )}
               <Button
                 type="submit"
-                disabled={!raw.trim()}
+                disabled={!raw.trim() && !file}
                 busy={save.isPending}
               >
                 {r ? "Analyze revision" : "Analyze requirement"}
@@ -200,6 +254,8 @@ export default function Requirements({
                 className="text-button"
                 onClick={() => {
                   setRaw(r.description);
+                  setFile(null);
+                  setFileError("");
                   setEditing(true);
                 }}
               >
