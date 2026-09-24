@@ -1,9 +1,9 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Radar, RefreshCw, Square } from "lucide-react";
 import { api, ApiError } from "../../api/client";
 import { useAction } from "../../hooks/useAction";
 import { activeJob, human } from "../../utils/workflow";
-import type { Project, Requirement, AppMap, Job } from "../../types/api";
+import type { Project, Requirement, AppMap, Job, DiscoveryArea, DiscoveryModule } from "../../types/api";
 import {
   Button,
   Card,
@@ -15,6 +15,7 @@ import {
 } from "../../components/ui";
 import { ApplicationAccess } from "./ApplicationAccess";
 import LiveDiscoveryGraph from "./LiveDiscoveryGraph";
+import { DiscoveryDiagnosticPanel } from "./DiscoveryDiagnosticPanel";
 
 export default function Discovery({
   project,
@@ -40,11 +41,31 @@ export default function Discovery({
   onStopped: () => void;
 }) {
   const [url, setUrl] = useState(project.application_url || "");
-  const [pages, setPages] = useState(150);
-  const [depth, setDepth] = useState(6);
-  const [duration, setDuration] = useState(900);
-  const [workerLimit, setWorkerLimit] = useState(3);
+  const [pages, setPages] = useState(
+    map?.discovery_checkpoint?.configuration.max_pages ?? 150,
+  );
+  const [depth, setDepth] = useState(
+    map?.discovery_checkpoint?.configuration.max_depth ?? 6,
+  );
+  const [duration, setDuration] = useState(
+    map?.discovery_checkpoint?.configuration.max_duration_seconds ?? 900,
+  );
+  const [workerLimit, setWorkerLimit] = useState(
+    map?.discovery_checkpoint?.configuration.worker_limit ?? 3,
+  );
   const [automaticLimits, setAutomaticLimits] = useState(true);
+  const [selectedAreas, setSelectedAreas] = useState<string[]>(() => {
+    const saved = map?.coverage?.discovery_catalog as
+      | { selected_areas?: string[] }
+      | undefined;
+    return saved?.selected_areas ?? [];
+  });
+  const [selectedModules, setSelectedModules] = useState<string[]>(() => {
+    const saved = map?.coverage?.discovery_catalog as
+      | { selected_modules?: string[] }
+      | undefined;
+    return saved?.selected_modules ?? [];
+  });
 
   /**
    * credential_ref of the account chosen for this run.
@@ -57,20 +78,53 @@ export default function Discovery({
 
   /** Whether any account has been saved (for the "Configured" badge) */
   const [savedBadge, setSavedBadge] = useState(!!project.credential_ref);
+  const catalog = map?.coverage?.discovery_catalog as
+    | { mode?: string; areas?: DiscoveryArea[]; modules?: DiscoveryModule[] }
+    | undefined;
+  const areas = catalog?.areas ?? [];
+  const modules = catalog?.modules ?? [];
+  const hasInventory = areas.length > 0;
+
+  useEffect(() => {
+    const configuration = map?.discovery_checkpoint?.configuration;
+    if (!configuration || map?.status !== "PARTIAL") return;
+    setPages(configuration.max_pages);
+    setDepth(configuration.max_depth);
+    setDuration(configuration.max_duration_seconds);
+    setWorkerLimit(configuration.worker_limit);
+    setSelectedAreas(configuration.selected_areas);
+    setSelectedModules(configuration.selected_modules);
+  }, [map?.id, map?.status, map?.discovery_checkpoint]);
+  const discoveryBody = (resume: boolean, startFromScratch = false) => ({
+    url,
+    focus_requirements: [],
+    max_pages: pages,
+    max_depth: depth,
+    max_duration_seconds: duration,
+    worker_limit: workerLimit,
+    automatic_limits: resume ? false : automaticLimits,
+    credential_ref: selectedRef ?? undefined,
+    discovery_mode: hasInventory ? "deep" as const : "inventory" as const,
+    selected_areas: selectedAreas,
+    selected_modules: selectedModules,
+    start_from_scratch: startFromScratch,
+    ...(resume && map ? { resume_application_map_id: map.id } : {}),
+  });
 
   const discover = useAction(
     project.id,
-    () =>
-      api.discover(project.id, {
-        url,
-        focus_requirements: [`${requirement.id}@v${requirement.version}`],
-        max_pages: pages,
-        max_depth: depth,
-        max_duration_seconds: duration,
-        worker_limit: workerLimit,
-        automatic_limits: automaticLimits,
-        credential_ref: selectedRef ?? undefined,
-      }),
+    () => api.discover(
+      project.id,
+      discoveryBody(
+        false,
+        map?.status === "PARTIAL" && !!map.discovery_checkpoint,
+      ),
+    ),
+    (data) => onStarted(data.job_id),
+  );
+  const continueDiscovery = useAction(
+    project.id,
+    () => api.discover(project.id, discoveryBody(true)),
     (data) => onStarted(data.job_id),
   );
   const stopDiscovery = useAction(
@@ -79,9 +133,15 @@ export default function Discovery({
     onStopped,
   );
 
+  const terminalJob = ["complete", "failed", "cancelled"].includes(
+    job?.status ?? "",
+  );
   const running =
     !jobError &&
-    (activeJob(job?.status) || map?.status === "RUNNING" || discover.isPending);
+    (activeJob(job?.status) ||
+      (!terminalJob && map?.status === "RUNNING") ||
+      discover.isPending ||
+      continueDiscovery.isPending);
 
   const failed =
     job?.status === "failed" ||
@@ -91,6 +151,7 @@ export default function Discovery({
   const partial =
     !running &&
     (job?.result?.status === "PARTIAL" || map?.status === "PARTIAL");
+  const resumable = partial && !!map?.discovery_checkpoint;
 
   /**
    * Derive the role name shown in the "Discovered as" badge on the map.
@@ -284,6 +345,48 @@ export default function Discovery({
               </span>
             </div>
 
+            {hasInventory && (
+              <section className="discovery-scope" aria-labelledby="discovery-scope-title">
+                <h3 id="discovery-scope-title">Choose discovery scope</h3>
+                <p className="field-hint">
+                  Select one or more areas. Select Dashboard without modules to discover the complete Dashboard.
+                </p>
+                {areas.map((area) => (
+                  <label key={area.id}>
+                    <input
+                      type="checkbox"
+                      checked={selectedAreas.includes(area.id)}
+                      onChange={(event) => setSelectedAreas((current) =>
+                        event.target.checked
+                          ? [...current, area.id]
+                          : current.filter((id) => id !== area.id),
+                      )}
+                    />
+                    {area.label}
+                  </label>
+                ))}
+                {modules.length > 0 && (
+                  <fieldset disabled={!selectedAreas.includes("dashboard")}>
+                    <legend>Dashboard modules (optional)</legend>
+                    {modules.map((module) => (
+                      <label key={module.id}>
+                        <input
+                          type="checkbox"
+                          checked={selectedModules.includes(module.id)}
+                          onChange={(event) => setSelectedModules((current) =>
+                            event.target.checked
+                              ? [...current, module.id]
+                              : current.filter((id) => id !== module.id),
+                          )}
+                        />
+                        {module.label}
+                      </label>
+                    ))}
+                  </fieldset>
+                )}
+              </section>
+            )}
+
             {/* Crawl limits */}
             <details>
               <summary>Discovery settings</summary>
@@ -299,7 +402,7 @@ export default function Discovery({
                 Continues until no new unique pages or actions remain. Internal
                 circuit breakers and Stop discovery still protect the worker.
               </p>
-              {!automaticLimits && (
+              {(!automaticLimits || resumable) && (
               <div className="form-grid three">
                 <label>
                   Maximum pages
@@ -346,23 +449,41 @@ export default function Discovery({
               </label>
             </details>
 
-            {discover.error && <ErrorState error={discover.error} />}
+            {(discover.error || continueDiscovery.error) && (
+              <ErrorState error={discover.error || continueDiscovery.error} />
+            )}
 
             <div className="actions">
+              {resumable && (
+                <Button
+                  type="button"
+                  busy={continueDiscovery.isPending}
+                  disabled={!!jobError}
+                  onClick={() => continueDiscovery.mutate()}
+                >
+                  <RefreshCw size={16} />
+                  Continue Discovery
+                </Button>
+              )}
               <Button
                 type="submit"
                 busy={discover.isPending}
-                disabled={!!jobError}
+                disabled={
+                  !!jobError ||
+                  (!resumable && hasInventory && selectedAreas.length === 0)
+                }
               >
                 {failed || partial ? (
                   <RefreshCw size={16} />
                 ) : (
                   <Radar size={16} />
                 )}
-                {failed || partial
-                  ? "Retry discovery"
-                  : map
-                    ? "Run discovery again"
+                {resumable
+                  ? "Start from Scratch"
+                  : failed || partial
+                    ? "Retry discovery"
+                  : hasInventory
+                    ? "Discover selected scope"
                     : "Start discovery"}
               </Button>
             </div>
@@ -370,6 +491,14 @@ export default function Discovery({
         )}
 
         {/* Next action */}
+        {map?.diagnostic_evidence && !running && (
+          <DiscoveryDiagnosticPanel
+            diagnostic={map.diagnostic_evidence}
+            status={map.status}
+            mapId={map.id}
+          />
+        )}
+
         {map && !running && (
           <NextAction
             title={

@@ -279,19 +279,19 @@ export default function ApplicationMap({
         title={
           map.status === "COMPLETE"
             ? "Turn observations into test coverage"
-            : "Complete discovery to continue"
+            : "Generate from the partial graph"
         }
         description={
           map.status === "COMPLETE"
             ? "Design test cases using your approved requirement and this application map."
-            : "Test generation needs a complete map. Review discovery details and retry."
+            : "Use the states discovered so far now, then continue discovery and generate only for newly added states later."
         }
         label={
           map.status === "COMPLETE"
             ? "Continue to test generation"
-            : "Review discovery"
+            : "Generate from partial graph"
         }
-        onClick={map.status === "COMPLETE" ? onNext : onRetry}
+        onClick={onNext}
       />
       {selected && (
         <DetailDrawer
@@ -305,6 +305,18 @@ export default function ApplicationMap({
           <label>
             URL<span className="value">{selected.url_pattern}</span>
           </label>
+          {selected.evidence_ref && (
+            <>
+              <h3>Observed screenshot</h3>
+              <a href={selected.evidence_ref} target="_blank" rel="noreferrer">
+                <img
+                  src={selected.evidence_ref}
+                  alt={`Observed state ${selected.state_code}`}
+                  style={{ width: "100%", borderRadius: "8px", border: "1px solid var(--border)" }}
+                />
+              </a>
+            </>
+          )}
           <h3>Navigation path</h3>
           {selected.reached_via.length ? (
             <ol className="path-list">

@@ -73,6 +73,42 @@ export interface AppMap {
   states: AppState[];
   /** Populated when status is FAILED or PARTIAL */
   diagnostic_evidence?: DiscoveryDiagnostic | null;
+  discovery_checkpoint?: DiscoveryCheckpoint | null;
+  test_generation_coverage?: Record<string, string[]>;
+  project_test_generation_coverage?: Record<string, string[]>;
+}
+
+export interface DiscoveryCheckpoint {
+  version: number;
+  configuration: {
+    mode: "inventory" | "deep" | "complete";
+    selected_areas: string[];
+    selected_modules: string[];
+    max_pages: number;
+    max_depth: number;
+    max_duration_seconds: number;
+    worker_limit: number;
+    automatic_limits: boolean;
+  };
+  pending_nodes: Record<string, unknown>[];
+  failed_nodes: Record<string, unknown>[];
+  in_progress_nodes: Record<string, unknown>[];
+  completed_nodes: string[];
+}
+
+export interface DiscoveryArea {
+  id: string;
+  label: string;
+  kind: "public" | "authentication" | "authenticated";
+  state_fingerprints: string[];
+  selectable: boolean;
+}
+
+export interface DiscoveryModule {
+  id: string;
+  label: string;
+  area_id: string;
+  state_fingerprints: string[];
 }
 
 /** Structured failure evidence — tells the developer exactly what went wrong. */
@@ -84,11 +120,17 @@ export interface DiscoveryDiagnostic {
   /** Path to the screenshot taken at time of failure */
   screenshot_ref: string | null;
   /** Console errors and warnings captured from the browser */
-  console_errors: { level: string; text: string }[];
+  console_errors?: { level: string; text: string }[];
   /** Non-2xx network responses observed during crawl */
-  network_errors: { method: string; url: string; status: string }[];
+  network_errors?: { method: string; url: string; status: string }[];
   /** Actions that threw exceptions during replay */
-  failed_actions: { action?: string; phase?: string; error: string }[];
+  failed_actions?: {
+    action?: string;
+    phase?: string;
+    error: string;
+    detail?: string;
+    screenshot_ref?: string | null;
+  }[];
   /** Human-readable explanation of why discovery ended */
   termination_detail: string | null;
 }

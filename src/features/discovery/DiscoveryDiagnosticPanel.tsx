@@ -107,12 +107,15 @@ export function DiscoveryDiagnosticPanel({
   mapId: string;
 }) {
   const isFailed = status === "FAILED";
+  const consoleErrors = diagnostic.console_errors ?? [];
+  const networkErrors = diagnostic.network_errors ?? [];
+  const failedActions = diagnostic.failed_actions ?? [];
 
   const totalIssues =
     (diagnostic.login_error ? 1 : 0) +
-    diagnostic.console_errors.length +
-    diagnostic.network_errors.length +
-    diagnostic.failed_actions.length;
+    consoleErrors.length +
+    networkErrors.length +
+    failedActions.length;
 
   return (
     <div className="diag-panel">
@@ -206,15 +209,16 @@ export function DiscoveryDiagnosticPanel({
         >
           <p className="diag-fix-hint">
             Screenshot taken at the moment discovery ended.
-            File path on the server:{" "}
+            Artifact reference:{" "}
             <code className="diag-code">{diagnostic.screenshot_ref}</code>
           </p>
-          <div className="diag-screenshot-note">
-            <AlertTriangle size={13} />
-            Screenshots are saved on the server filesystem at the path above.
-            To view them, access the server directly or configure object storage
-            (MinIO) and implement a screenshot serving endpoint.
-          </div>
+          <a href={diagnostic.screenshot_ref} target="_blank" rel="noreferrer">
+            <img
+              src={diagnostic.screenshot_ref}
+              alt="Browser state when discovery stopped"
+              style={{ width: "100%", borderRadius: "8px", border: "1px solid var(--border)" }}
+            />
+          </a>
         </Section>
       )}
 
@@ -222,14 +226,14 @@ export function DiscoveryDiagnosticPanel({
       <Section
         icon={<Terminal size={15} />}
         title="Browser console"
-        count={diagnostic.console_errors.length}
-        defaultOpen={diagnostic.console_errors.length > 0}
+        count={consoleErrors.length}
+        defaultOpen={consoleErrors.length > 0}
       >
-        {diagnostic.console_errors.length === 0 ? (
+        {consoleErrors.length === 0 ? (
           <p className="diag-empty">No console errors or warnings captured.</p>
         ) : (
           <div className="diag-list">
-            {diagnostic.console_errors.map((msg, i) => (
+            {consoleErrors.map((msg, i) => (
               <div key={i} className={`diag-list-row ${msg.level === "error" ? "diag-list-row--error" : "diag-list-row--warn"}`}>
                 <span className={`badge ${msg.level === "error" ? "bad" : "warn"}`} style={{ flexShrink: 0 }}>
                   {msg.level}
@@ -239,7 +243,7 @@ export function DiscoveryDiagnosticPanel({
             ))}
           </div>
         )}
-        {diagnostic.console_errors.length > 0 && (
+        {consoleErrors.length > 0 && (
           <div className="diag-fix-hint" style={{ marginTop: "12px" }}>
             <strong>Action:</strong> Share these errors with your developer.
             JavaScript errors often indicate broken API calls, missing
@@ -253,10 +257,10 @@ export function DiscoveryDiagnosticPanel({
       <Section
         icon={<Wifi size={15} />}
         title="Network — failed requests"
-        count={diagnostic.network_errors.length}
-        defaultOpen={diagnostic.network_errors.length > 0}
+        count={networkErrors.length}
+        defaultOpen={networkErrors.length > 0}
       >
-        {diagnostic.network_errors.length === 0 ? (
+        {networkErrors.length === 0 ? (
           <p className="diag-empty">No failed network requests captured.</p>
         ) : (
           <div className="diag-table-wrap">
@@ -269,7 +273,7 @@ export function DiscoveryDiagnosticPanel({
                 </tr>
               </thead>
               <tbody>
-                {diagnostic.network_errors.map((req, i) => (
+                {networkErrors.map((req, i) => (
                   <tr key={i}>
                     <td>
                       <span className="badge">{req.method}</span>
@@ -288,7 +292,7 @@ export function DiscoveryDiagnosticPanel({
             </table>
           </div>
         )}
-        {diagnostic.network_errors.length > 0 && (
+        {networkErrors.length > 0 && (
           <div className="diag-fix-hint" style={{ marginTop: "12px" }}>
             <strong>Action:</strong> 401/403 responses usually mean the login
             session was not established. 404 responses may indicate broken
@@ -302,14 +306,14 @@ export function DiscoveryDiagnosticPanel({
       <Section
         icon={<MousePointerClick size={15} />}
         title="Failed navigation actions"
-        count={diagnostic.failed_actions.length}
-        defaultOpen={diagnostic.failed_actions.length > 0}
+        count={failedActions.length}
+        defaultOpen={failedActions.length > 0}
       >
-        {diagnostic.failed_actions.length === 0 ? (
+        {failedActions.length === 0 ? (
           <p className="diag-empty">No navigation actions failed.</p>
         ) : (
           <div className="diag-list">
-            {diagnostic.failed_actions.map((fa, i) => (
+            {failedActions.map((fa, i) => (
               <div key={i} className="diag-list-row diag-list-row--error">
                 <div style={{ flex: 1, minWidth: 0 }}>
                   {fa.action && (
@@ -321,14 +325,23 @@ export function DiscoveryDiagnosticPanel({
                     </span>
                   )}
                   <p style={{ margin: "6px 0 0", fontSize: "11px", color: "var(--danger)" }}>
-                    {fa.error}
+                    {fa.error}{fa.detail ? `: ${fa.detail}` : ""}
                   </p>
+                  {fa.screenshot_ref && (
+                    <a href={fa.screenshot_ref} target="_blank" rel="noreferrer">
+                      <img
+                        src={fa.screenshot_ref}
+                        alt={`Failed action ${fa.action || i + 1}`}
+                        style={{ width: "100%", marginTop: "8px", borderRadius: "8px" }}
+                      />
+                    </a>
+                  )}
                 </div>
               </div>
             ))}
           </div>
         )}
-        {diagnostic.failed_actions.length > 0 && (
+        {failedActions.length > 0 && (
           <div className="diag-fix-hint" style={{ marginTop: "12px" }}>
             <strong>Action:</strong> These elements existed in the DOM but
             caused errors when the crawler tried to interact with them.

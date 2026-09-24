@@ -39,9 +39,30 @@ export function Generate({
   pending: boolean;
   error: unknown;
   result?: Generation;
-  onGenerate: () => void;
+  onGenerate: (
+    scope: "all" | "ungenerated",
+    areaIds: string[],
+    moduleIds: string[],
+  ) => void;
   onReview: () => void;
 }) {
+  const [selectedAreaIds, setSelectedAreaIds] = useState<string[]>([]);
+  const [selectedModuleIds, setSelectedModuleIds] = useState<string[]>([]);
+  const catalog = map.coverage?.discovery_catalog as
+    | {
+        areas?: { id: string; label: string }[];
+        modules?: { id: string; label: string; area_id: string }[];
+      }
+    | undefined;
+  const selectableAreas = catalog?.areas ?? [];
+  const selectableModules = catalog?.modules ?? [];
+  const generatedFingerprints = new Set(
+    map.project_test_generation_coverage?.[r.id] ?? [],
+  );
+  const ungeneratedStates = map.states.filter(
+    (state) => !generatedFingerprints.has(state.fingerprint),
+  );
+  const hasPreviousGeneration = generatedFingerprints.size > 0;
   return (
     <div className="two-column">
       <Card>
@@ -86,8 +107,8 @@ export function Generate({
               done: true,
             },
             {
-              title: "Complete application map available",
-              detail: `${map.states.length} states with observed elements.`,
+              title: `${human(map.status)} application map available`,
+              detail: `${map.states.length} observed states are available for grounded generation.`,
               done: true,
             },
           ]}
@@ -99,12 +120,75 @@ export function Generate({
           />
         )}
         {!!error && <ErrorState error={error} />}
+        {selectableAreas.length > 0 && (
+          <fieldset>
+            <legend>Generate for selected areas (optional)</legend>
+            <p className="field-hint">Leave everything clear to use the whole combined graph.</p>
+            {selectableAreas.map((area) => (
+              <label key={area.id}>
+                <input
+                  type="checkbox"
+                  checked={selectedAreaIds.includes(area.id)}
+                  onChange={(event) =>
+                    setSelectedAreaIds((current) =>
+                      event.target.checked
+                        ? [...current, area.id]
+                        : current.filter((id) => id !== area.id),
+                    )
+                  }
+                />
+                {area.label}
+              </label>
+            ))}
+            {selectableModules.length > 0 && (
+              <div>
+                <span>Dashboard modules</span>
+                {selectableModules.map((module) => (
+                  <label key={module.id}>
+                    <input
+                      type="checkbox"
+                      checked={selectedModuleIds.includes(module.id)}
+                      onChange={(event) =>
+                        setSelectedModuleIds((current) =>
+                          event.target.checked
+                            ? [...current, module.id]
+                            : current.filter((id) => id !== module.id),
+                        )
+                      }
+                    />
+                    {module.label}
+                  </label>
+                ))}
+              </div>
+            )}
+          </fieldset>
+        )}
         <div className="actions">
-          <Button onClick={onGenerate} busy={pending}>
+          <Button
+            onClick={() => onGenerate("all", selectedAreaIds, selectedModuleIds)}
+            busy={pending}
+          >
             <Sparkles size={16} />
-            {result ? "Generate another set" : "Generate test cases"}
+            {hasPreviousGeneration ? "Generate for whole graph" : "Generate test cases"}
           </Button>
+          {hasPreviousGeneration && ungeneratedStates.length > 0 && (
+            <Button
+              variant="secondary"
+              onClick={() =>
+                onGenerate("ungenerated", selectedAreaIds, selectedModuleIds)
+              }
+              busy={pending}
+            >
+              Generate only for new graph part ({ungeneratedStates.length})
+            </Button>
+          )}
         </div>
+        {map.status === "PARTIAL" && (
+          <div className="notice">
+            This map is partial. Generated tests will use the states discovered so far;
+            you can continue discovery and generate only for newly added states later.
+          </div>
+        )}
         {result && (
           <div className="notice success">
             <strong>{result.generated} test cases generated</strong>

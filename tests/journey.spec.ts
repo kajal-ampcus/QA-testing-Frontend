@@ -121,6 +121,8 @@ async function fixture(
     failAnalysis?: boolean;
     conflict?: boolean;
     tests?: boolean;
+    resumable?: boolean;
+    generationCoverage?: boolean;
   } = {},
 ) {
   const state = {
@@ -143,6 +145,50 @@ async function fixture(
     analysis: 0,
     conflicted: false,
   };
+  if (options.resumable) {
+    state.map = {
+      ...structuredClone(map),
+      status: "PARTIAL",
+      termination_reason: "MAX_PAGES_REACHED",
+      coverage: {
+        discovery_catalog: {
+          mode: "deep",
+          areas: [
+            {
+              id: "dashboard",
+              label: "Dashboard",
+              kind: "authenticated",
+              state_fingerprints: ["dashboard"],
+              selectable: true,
+            },
+          ],
+          modules: [],
+          selected_areas: ["dashboard"],
+          selected_modules: [],
+        },
+      },
+      discovery_checkpoint: {
+        version: 1,
+        configuration: {
+          mode: "deep",
+          selected_areas: ["dashboard"],
+          selected_modules: [],
+          max_pages: 20,
+          max_depth: 3,
+          max_duration_seconds: 60,
+          worker_limit: 2,
+          automatic_limits: false,
+        },
+        pending_nodes: [{}],
+        failed_nodes: [],
+        in_progress_nodes: [],
+        completed_nodes: ["login", "dashboard"],
+      },
+    };
+  }
+  if (options.generationCoverage && state.map) {
+    state.map.project_test_generation_coverage = { r1: ["login"] };
+  }
   if (options.existing && !options.approved)
     state.approvals = [
       {
@@ -272,7 +318,13 @@ async function fixture(
       status = 201;
     } else if (path === "/application-maps/projects/p1/discover") {
       state.discovers++;
-      expect(body.focus_requirements).toEqual(["r1@v2"]);
+      expect(body.focus_requirements).toEqual([]);
+      if (body.resume_application_map_id) {
+        expect(body.resume_application_map_id).toBe("m1");
+        expect(body.max_pages).toBe(30);
+      } else if (!options.resumable) {
+        expect(body.discovery_mode).toBe("inventory");
+      }
       state.polls = 0;
       result = { job_id: "job-1" };
       status = 202;
@@ -309,7 +361,13 @@ async function fixture(
         result = { detail: "No application map yet" };
       }
     } else if (path === "/test-cases/projects/p1/generate") {
-      expect(body).toEqual({ requirement_id: "r1", application_map_id: "m1" });
+      expect(body).toEqual({
+        requirement_id: "r1",
+        application_map_id: "m1",
+        generation_scope: "all",
+        selected_area_ids: [],
+        selected_module_ids: [],
+      });
       await new Promise((resolve) => setTimeout(resolve, 300));
       state.tests = [structuredClone(testCase)];
       result = {
@@ -510,6 +568,50 @@ test("failed worker result is actionable and retries discovery", async ({
     page.getByRole("heading", { name: "Your application, mapped" }),
   ).toBeVisible({ timeout: 15000 });
   expect(state.discovers).toBe(2);
+});
+test("partial discovery can continue with revised safety limits or restart", async ({
+  page,
+}) => {
+  const { state } = await fixture(page, {
+    existing: true,
+    approved: true,
+    resumable: true,
+  });
+  await page.goto("/projects/p1");
+  await page
+    .getByRole("button", { name: "Application discovery", exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Continue Discovery", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Start from Scratch", exact: true }),
+  ).toBeVisible();
+  await page.getByLabel("Maximum pages").fill("30");
+  await page
+    .getByRole("button", { name: "Continue Discovery", exact: true })
+    .click();
+  expect(state.discovers).toBe(1);
+});
+test("test generation offers whole graph or only newly discovered states", async ({
+  page,
+}) => {
+  await fixture(page, {
+    existing: true,
+    approved: true,
+    map: true,
+    generationCoverage: true,
+  });
+  await page.goto("/projects/p1?requirement=r1&stage=4");
+  await expect(
+    page.getByRole("button", { name: "Generate for whole graph", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", {
+      name: "Generate only for new graph part (1)",
+      exact: true,
+    }),
+  ).toBeVisible();
 });
 test("rejected approval leads to a revision and a new approval", async ({
   page,

@@ -154,7 +154,20 @@ export default function Workspace({ id }: { id: string }) {
   };
   const generation = useAction(
     id,
-    () => api.generate(id, r!.id, map.data!.id),
+    (selection: {
+      scope: "all" | "ungenerated";
+      areaIds: string[];
+      moduleIds: string[];
+    }) =>
+      api.generate(
+        id,
+        r!.id,
+        map.data!.id,
+        undefined,
+        selection.scope,
+        selection.areaIds,
+        selection.moduleIds,
+      ),
     () => navigateStage(5),
   );
   const coverageGeneration = useAction(
@@ -400,7 +413,9 @@ export default function Workspace({ id }: { id: string }) {
                   pending={generation.isPending}
                   error={generation.error}
                   result={generation.data}
-                  onGenerate={() => generation.mutate()}
+                  onGenerate={(scope, areaIds, moduleIds) =>
+                    generation.mutate({ scope, areaIds, moduleIds })
+                  }
                   onReview={() => navigateStage(5)}
                 />
               )}{" "}
