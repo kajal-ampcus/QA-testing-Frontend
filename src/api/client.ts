@@ -135,7 +135,8 @@ export const api = {
       max_duration_seconds: number;
       worker_limit?: number;
       automatic_limits?: boolean;
-      discovery_mode?: "inventory" | "deep" | "complete";
+      discovery_mode?: "entry_points" | "auth_flow" | "modules" | "inventory" | "deep" | "complete";
+      selected_auth_flow?: string | null;
       selected_areas?: string[];
       selected_modules?: string[];
       resume_application_map_id?: string;

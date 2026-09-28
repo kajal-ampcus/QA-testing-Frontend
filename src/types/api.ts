@@ -81,7 +81,8 @@ export interface AppMap {
 export interface DiscoveryCheckpoint {
   version: number;
   configuration: {
-    mode: "inventory" | "deep" | "complete";
+    mode: "entry_points" | "auth_flow" | "modules" | "inventory" | "deep" | "complete";
+    selected_auth_flow?: string | null;
     selected_areas: string[];
     selected_modules: string[];
     max_pages: number;
@@ -108,7 +109,18 @@ export interface DiscoveryModule {
   id: string;
   label: string;
   area_id: string;
+  auth_flow_id?: string | null;
   state_fingerprints: string[];
+  entry_action?: { role?: string; name?: string; url?: string | null };
+}
+
+export interface DiscoveryAuthenticationFlow {
+  id: string;
+  label: string;
+  kind: "login" | "registration" | "recovery" | "authentication";
+  url_pattern: string;
+  state_fingerprint: string;
+  selectable: boolean;
 }
 
 /** Structured failure evidence — tells the developer exactly what went wrong. */
@@ -131,6 +143,8 @@ export interface DiscoveryDiagnostic {
     detail?: string;
     screenshot_ref?: string | null;
   }[];
+  /** The target stopped at an anti-bot interstitial before app UI was available. */
+  security_verification_required?: boolean;
   /** Human-readable explanation of why discovery ended */
   termination_detail: string | null;
 }

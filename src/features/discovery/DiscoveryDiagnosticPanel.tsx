@@ -110,8 +110,11 @@ export function DiscoveryDiagnosticPanel({
   const consoleErrors = diagnostic.console_errors ?? [];
   const networkErrors = diagnostic.network_errors ?? [];
   const failedActions = diagnostic.failed_actions ?? [];
+  const securityVerificationRequired =
+    diagnostic.security_verification_required ?? false;
 
   const totalIssues =
+    (securityVerificationRequired ? 1 : 0) +
     (diagnostic.login_error ? 1 : 0) +
     consoleErrors.length +
     networkErrors.length +
@@ -126,7 +129,9 @@ export function DiscoveryDiagnosticPanel({
         </div>
         <div className="diag-banner-body">
           <strong>
-            {isFailed
+            {securityVerificationRequired
+              ? "Discovery paused - security verification required"
+              : isFailed
               ? "Discovery failed — application was not mapped"
               : "Discovery completed with issues — map may be incomplete"}
           </strong>
@@ -134,9 +139,15 @@ export function DiscoveryDiagnosticPanel({
             <p>{diagnostic.termination_detail}</p>
           )}
           <p className="diag-banner-hint">
+            {securityVerificationRequired ? (
+              <>The target blocked the discovery browser before application content loaded. Configure test access as described below, then continue discovery.</>
+            ) : (
+              <>
             Review each section below, fix the issues, update credentials if
             needed, and retry discovery. Share the diagnostic report with your
             developer if the issue is in the application itself.
+              </>
+            )}
           </p>
         </div>
         <div className="diag-banner-stats">
@@ -146,6 +157,27 @@ export function DiscoveryDiagnosticPanel({
       </div>
 
       {/* ── 2. Authentication ────────────────────────────────────── */}
+      {securityVerificationRequired && (
+        <Section
+          icon={<ShieldOff size={15} />}
+          title="Security verification"
+          defaultOpen
+        >
+          <p className="diag-fix-hint">
+            The page shown is an anti-bot verification interstitial and is not
+            part of the application map. Discovery deliberately did not click
+            or bypass it.
+          </p>
+          <div className="diag-fix-hint" style={{ marginTop: "12px" }}>
+            <strong>How to continue:</strong> create a Cloudflare skip rule or
+            allowlist for the discovery worker on the test/staging hostname.
+            Once the application opens without the verification page, choose
+            <strong> Continue Discovery</strong>. The blocked page remains in
+            the checkpoint and will be retried.
+          </div>
+        </Section>
+      )}
+
       <Section
         icon={
           diagnostic.auth_succeeded ? (
@@ -160,7 +192,9 @@ export function DiscoveryDiagnosticPanel({
         <div className="diag-auth-row">
           <span className="diag-auth-label">Auth attempted</span>
           <span className={`badge ${diagnostic.auth_attempted ? "" : "warn"}`}>
-            {diagnostic.auth_attempted ? (
+            {securityVerificationRequired ? (
+              <><XCircle size={10} /> Not reached - verification blocked access</>
+            ) : diagnostic.auth_attempted ? (
               <><CheckCircle2 size={10} /> Yes</>
             ) : (
               <><XCircle size={10} /> No — no credential configured</>
@@ -170,7 +204,9 @@ export function DiscoveryDiagnosticPanel({
         <div className="diag-auth-row">
           <span className="diag-auth-label">Auth succeeded</span>
           <span className={`badge ${diagnostic.auth_succeeded ? "good" : "bad"}`}>
-            {diagnostic.auth_succeeded ? (
+            {securityVerificationRequired ? (
+              <><XCircle size={10} /> Not reached</>
+            ) : diagnostic.auth_succeeded ? (
               <><CheckCircle2 size={10} /> Yes — logged in successfully</>
             ) : (
               <><XCircle size={10} /> No — login failed</>

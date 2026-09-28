@@ -3,7 +3,14 @@ import { Radar, RefreshCw, Square } from "lucide-react";
 import { api, ApiError } from "../../api/client";
 import { useAction } from "../../hooks/useAction";
 import { activeJob, human } from "../../utils/workflow";
-import type { Project, Requirement, AppMap, Job, DiscoveryArea, DiscoveryModule } from "../../types/api";
+import type {
+  Project,
+  Requirement,
+  AppMap,
+  Job,
+  DiscoveryModule,
+  DiscoveryAuthenticationFlow,
+} from "../../types/api";
 import {
   Button,
   Card,
@@ -66,6 +73,12 @@ export default function Discovery({
       | undefined;
     return saved?.selected_modules ?? [];
   });
+  const [selectedAuthFlow, setSelectedAuthFlow] = useState<string | null>(() => {
+    const saved = map?.coverage?.discovery_catalog as
+      | { selected_auth_flow?: string | null }
+      | undefined;
+    return saved?.selected_auth_flow ?? null;
+  });
 
   /**
    * credential_ref of the account chosen for this run.
@@ -79,11 +92,32 @@ export default function Discovery({
   /** Whether any account has been saved (for the "Configured" badge) */
   const [savedBadge, setSavedBadge] = useState(!!project.credential_ref);
   const catalog = map?.coverage?.discovery_catalog as
-    | { mode?: string; areas?: DiscoveryArea[]; modules?: DiscoveryModule[] }
+    | {
+        mode?: string;
+        stage?: string;
+        modules?: DiscoveryModule[];
+        authentication_flows?: DiscoveryAuthenticationFlow[];
+        module_inventory_flows?: string[];
+        selected_auth_flow?: string | null;
+      }
     | undefined;
-  const areas = catalog?.areas ?? [];
   const modules = catalog?.modules ?? [];
-  const hasInventory = areas.length > 0;
+  const authenticationFlows = catalog?.authentication_flows ?? [];
+  const chosenAuthFlow = authenticationFlows.find((flow) => flow.id === selectedAuthFlow);
+  const hasEntryInventory = authenticationFlows.length > 0;
+  const visibleModules = modules.filter(
+    (module) => !module.auth_flow_id || module.auth_flow_id === selectedAuthFlow,
+  );
+  const hasModuleInventory = !!selectedAuthFlow && (
+    catalog?.module_inventory_flows?.includes(selectedAuthFlow) ?? false
+  );
+  const discoveryMode = !hasEntryInventory
+    ? "entry_points" as const
+    : chosenAuthFlow?.kind === "login"
+      ? hasModuleInventory
+        ? "deep" as const
+        : "modules" as const
+      : "auth_flow" as const;
 
   useEffect(() => {
     const configuration = map?.discovery_checkpoint?.configuration;
@@ -92,6 +126,7 @@ export default function Discovery({
     setDepth(configuration.max_depth);
     setDuration(configuration.max_duration_seconds);
     setWorkerLimit(configuration.worker_limit);
+    setSelectedAuthFlow(configuration.selected_auth_flow ?? null);
     setSelectedAreas(configuration.selected_areas);
     setSelectedModules(configuration.selected_modules);
   }, [map?.id, map?.status, map?.discovery_checkpoint]);
@@ -104,9 +139,10 @@ export default function Discovery({
     worker_limit: workerLimit,
     automatic_limits: resume ? false : automaticLimits,
     credential_ref: selectedRef ?? undefined,
-    discovery_mode: hasInventory ? "deep" as const : "inventory" as const,
-    selected_areas: selectedAreas,
-    selected_modules: selectedModules,
+    discovery_mode: startFromScratch ? "entry_points" as const : discoveryMode,
+    selected_auth_flow: startFromScratch ? null : selectedAuthFlow,
+    selected_areas: startFromScratch ? [] : selectedAreas,
+    selected_modules: startFromScratch ? [] : selectedModules,
     start_from_scratch: startFromScratch,
     ...(resume && map ? { resume_application_map_id: map.id } : {}),
   });
@@ -345,30 +381,44 @@ export default function Discovery({
               </span>
             </div>
 
-            {hasInventory && (
+            {authenticationFlows.length > 0 && (
               <section className="discovery-scope" aria-labelledby="discovery-scope-title">
-                <h3 id="discovery-scope-title">Choose discovery scope</h3>
+                <h3 id="discovery-scope-title">Choose an authentication flow</h3>
                 <p className="field-hint">
-                  Select one or more areas. Select Dashboard without modules to discover the complete Dashboard.
+                  These entry points were observed from the application. Select the flow you want to continue with.
                 </p>
-                {areas.map((area) => (
-                  <label key={area.id}>
-                    <input
-                      type="checkbox"
-                      checked={selectedAreas.includes(area.id)}
-                      onChange={(event) => setSelectedAreas((current) =>
-                        event.target.checked
-                          ? [...current, area.id]
-                          : current.filter((id) => id !== area.id),
-                      )}
-                    />
-                    {area.label}
-                  </label>
-                ))}
-                {modules.length > 0 && (
-                  <fieldset disabled={!selectedAreas.includes("dashboard")}>
-                    <legend>Dashboard modules (optional)</legend>
-                    {modules.map((module) => (
+                <div className="authentication-flow-options" role="radiogroup" aria-labelledby="discovery-scope-title">
+                  {authenticationFlows.map((flow) => (
+                    <label
+                      key={flow.id}
+                      className={`authentication-flow-option${selectedAuthFlow === flow.id ? " is-selected" : ""}`}
+                    >
+                      <input
+                        type="radio"
+                        name="authentication-flow"
+                        checked={selectedAuthFlow === flow.id}
+                        onChange={() => {
+                          setSelectedAuthFlow(flow.id);
+                          setSelectedModules([]);
+                        }}
+                      />
+                      <span className="authentication-flow-copy">
+                        <strong>{flow.label}</strong>
+                        <span className="field-hint">{human(flow.kind)}</span>
+                      </span>
+                    </label>
+                  ))}
+                </div>
+                {chosenAuthFlow?.kind === "login" && hasModuleInventory && (
+                  <fieldset>
+                    <legend>Choose functional areas</legend>
+                    <p className="field-hint">
+                      These modules were discovered from the authenticated landing page and navigation.
+                    </p>
+                    {visibleModules.length === 0 && (
+                      <p className="field-hint">No separate navigation modules were observed for this flow.</p>
+                    )}
+                    {visibleModules.map((module) => (
                       <label key={module.id}>
                         <input
                           type="checkbox"
@@ -470,7 +520,9 @@ export default function Discovery({
                 busy={discover.isPending}
                 disabled={
                   !!jobError ||
-                  (!resumable && hasInventory && selectedAreas.length === 0)
+                  (!resumable && authenticationFlows.length > 0 && !selectedAuthFlow) ||
+                  (!resumable && discoveryMode === "modules" && !selectedRef) ||
+                  (!resumable && discoveryMode === "deep" && selectedModules.length === 0)
                 }
               >
                 {failed || partial ? (
@@ -482,10 +534,23 @@ export default function Discovery({
                   ? "Start from Scratch"
                   : failed || partial
                     ? "Retry discovery"
-                  : hasInventory
-                    ? "Discover selected scope"
+                  : hasEntryInventory
+                    ? discoveryMode === "entry_points"
+                      ? "Start discovery"
+                      : discoveryMode === "modules"
+                        ? "Discover application modules"
+                        : discoveryMode === "deep"
+                          ? catalog?.stage === "deep"
+                            ? "Discover More"
+                            : "Discover selected modules"
+                          : "Discover selected flow"
                     : "Start discovery"}
               </Button>
+              {map && !running && (
+                <Button type="button" variant="secondary" onClick={onNext}>
+                  Finish
+                </Button>
+              )}
             </div>
           </form>
         )}

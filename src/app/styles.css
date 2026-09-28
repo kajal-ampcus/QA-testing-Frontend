@@ -874,6 +874,45 @@ ol {
   font-weight: 400;
   display: block;
 }
+.authentication-flow-options {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+}
+.authentication-flow-option {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: border-color 140ms ease, background-color 140ms ease;
+}
+.authentication-flow-option:hover,
+.authentication-flow-option.is-selected {
+  border-color: #a9bda0;
+  background: #f7faf4;
+}
+.authentication-flow-option input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--primary);
+}
+.authentication-flow-copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.authentication-flow-copy strong {
+  font-size: 13px;
+  line-height: 1.4;
+}
+.authentication-flow-copy .field-hint {
+  margin: 0;
+}
 .drawer {
   border: 0;
   border-left: 1px solid var(--border);
