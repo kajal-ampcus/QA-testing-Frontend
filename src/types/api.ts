@@ -52,6 +52,7 @@ export interface Approval {
 }
 
 export interface AppState {
+  id?: string;
   state_code: string;
   url_pattern: string;
   fingerprint: string;
@@ -79,9 +80,10 @@ export interface AppMap {
 }
 
 export interface DiscoveryCheckpoint {
+  progress?: Record<string, string | number>;
   version: number;
   configuration: {
-    mode: "entry_points" | "auth_flow" | "modules" | "inventory" | "deep" | "complete";
+    mode: "entry_points" | "auth_flow" | "modules" | "inventory" | "deep" | "complete" | "targeted" | "full";
     selected_auth_flow?: string | null;
     selected_auth_flows?: string[];
     selected_areas: string[];

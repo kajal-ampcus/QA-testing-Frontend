@@ -11,7 +11,11 @@ import {
   type Node,
   type ReactFlowInstance,
 } from "@xyflow/react";
-import dagre from "@dagrejs/dagre";
+import {
+  functionalStateName,
+  layoutApplicationGraph,
+  type ApplicationGraphData,
+} from "./graphLayout";
 import { Globe, Search, Network, Maximize2, Minimize2 } from "lucide-react";
 import "@xyflow/react/dist/style.css";
 import type { AppMap, AppState } from "../../types/api";
@@ -22,63 +26,6 @@ import {
   EmptyState,
   NextAction,
 } from "../../components/ui";
-export function pathEdges(states: AppState[]) {
-  return states.flatMap((state) => {
-    if (!state.reached_via.length) return [];
-    const prefix = state.reached_via.slice(0, -1);
-    let parents = states.filter(
-      (p) =>
-        p.state_code !== state.state_code &&
-        JSON.stringify(p.reached_via) === JSON.stringify(prefix),
-    );
-    // Older maps can contain more than one phase-entry state with an empty
-    // path. Resolve a public link transition from the observed href instead
-    // of dropping an otherwise valid edge as ambiguous.
-    if (parents.length > 1) {
-      const childPath = new URL(
-        state.url_pattern,
-        "https://placeholder.invalid",
-      ).pathname;
-      const hrefParents = parents.filter((parent) =>
-        parent.elements.some((element) => {
-          if (element.role !== "link" || typeof element.url !== "string") {
-            return false;
-          }
-          try {
-            return new URL(element.url, "https://placeholder.invalid").pathname === childPath;
-          } catch {
-            return false;
-          }
-        }),
-      );
-      if (hrefParents.length === 1) parents = hrefParents;
-    }
-    return parents.length === 1
-      ? [
-          {
-            id: `${parents[0].state_code}-${state.state_code}`,
-            source: parents[0].state_code,
-            target: state.state_code,
-            label:
-              state.reached_via.at(-1)?.match(/name=['"](.*?)['"]\)/)?.[1] ||
-              "Navigation path",
-          },
-        ]
-      : [];
-  });
-}
-function title(s: AppState) {
-  try {
-    const p = new URL(s.url_pattern, "https://placeholder.invalid").pathname;
-    return p === "/"
-      ? "Home"
-      : decodeURIComponent(
-          p.split("/").filter(Boolean).at(-1) || "Page",
-        ).replaceAll("-", " ");
-  } catch {
-    return s.state_code;
-  }
-}
 function StateNode({
   data,
 }: NodeProps<
@@ -103,21 +50,14 @@ function StateNode({
       }}
       className={`map-node ${data.dim ? "dim" : ""} ${data.highlighted ? "highlighted" : ""}`}
     >
-      <Handle type="target" position={Position.Left} />
-      <header>
+      <Handle type="target" position={Position.Top} />
+      <div className="map-node-content">
         <span className="map-node-icon">
           <Globe size={16} />
         </span>
-        <span className="mono">{data.state.state_code}</span>
-        <span className="observed-dot" title="Observed state" />
-      </header>
-      <h3>{title(data.state)}</h3>
-      <p>{data.state.url_pattern}</p>
-      <footer>
-        <span>{data.state.elements.length} elements</span>
-        <span>Observed</span>
-      </footer>
-      <Handle type="source" position={Position.Right} />
+        <h3>{functionalStateName(data.state)}</h3>
+      </div>
+      <Handle type="source" position={Position.Bottom} />
     </div>
   );
 }
@@ -171,31 +111,21 @@ export default function ApplicationMap({
   }, []);
 
   const graph = useMemo(() => {
-    const edges = pathEdges(map.states);
-    const g = new dagre.graphlib.Graph()
-      .setGraph({ rankdir: "LR", nodesep: 42, ranksep: 100 })
-      .setDefaultEdgeLabel(() => ({}));
-    map.states.forEach((s) =>
-      g.setNode(s.state_code, { width: 244, height: 145 }),
-    );
-    edges.forEach((e) => g.setEdge(e.source, e.target));
-    dagre.layout(g);
+    const source = map.coverage?.app_flow_graph as ApplicationGraphData | undefined;
+    const checkpoint = map.discovery_checkpoint as (typeof map.discovery_checkpoint & { graph?: ApplicationGraphData });
+    const relationships = (map.status === "RUNNING" ? checkpoint?.graph?.edges : undefined)
+      ?? source?.edges ?? checkpoint?.graph?.edges ?? [];
+    const layout = layoutApplicationGraph(map.states, relationships, 196, 64);
     return {
-      edges,
-      nodes: map.states.map((s) => ({
-        id: s.state_code,
+      edges: layout.edges,
+      nodes: layout.nodes.map((node) => ({
+        ...node,
         type: "application",
-        width: 244,
-        height: 150,
-        position: {
-          x: g.node(s.state_code).x - 122,
-          y: g.node(s.state_code).y - 72,
-        },
-        data: { state: s, dim: false, highlighted: false },
+        data: { ...node.data, dim: false, highlighted: false },
       })),
     };
   }, [map]);
-  const active = hover || selected?.state_code;
+  const active = hover || selected?.id || selected?.state_code;
   const related = new Set(
     active
       ? [
@@ -212,7 +142,7 @@ export default function ApplicationMap({
       ...n.data,
       dim:
         (!!search &&
-          !`${n.data.state.state_code} ${n.data.state.url_pattern}`
+          !`${functionalStateName(n.data.state)} ${n.data.state.state_code} ${n.data.state.url_pattern}`
             .toLowerCase()
             .includes(search.toLowerCase())) ||
         (!!active && !related.has(n.id)),
@@ -232,9 +162,6 @@ export default function ApplicationMap({
           : "#bdc8c2",
       strokeWidth: 1.5,
     },
-    labelStyle: { fontSize: 10, fill: "#68766e" },
-    labelBgStyle: { fill: "#f8faf8" },
-    labelBgPadding: [6, 4] as [number, number],
   }));
   return (
     <>
@@ -246,7 +173,7 @@ export default function ApplicationMap({
           <div>
             <h2>Your application, mapped</h2>
             <p>
-              {map.states.length} states · {graph.edges.length} path-derived
+              {graph.nodes.length} states · {graph.edges.length}
               connections · Version {map.version}
             </p>
           </div>
@@ -315,7 +242,7 @@ export default function ApplicationMap({
             Observed state
           </span>
           <span>
-            — Connection inferred from a unique matching navigation path
+            — Application flow relationship
           </span>
           <span>Scroll to zoom · Drag to pan</span>
         </div>
@@ -343,7 +270,7 @@ export default function ApplicationMap({
       />
       {selected && (
         <DetailDrawer
-          title={title(selected)}
+          title={functionalStateName(selected)}
           onClose={() => setSelected(undefined)}
         >
           <div className="tags">

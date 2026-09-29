@@ -38,7 +38,7 @@ import type { ProjectAccount } from "../../types/api";
 
 /* ── helpers ──────────────────────────────────────────────────── */
 
-const ROLE_SUGGESTIONS = ["Admin", "Manager", "Customer", "Viewer", "Editor"];
+const ROLE_SUGGESTIONS = ["Employee", "Admin", "Manager", "Customer", "Viewer", "Editor"];
 
 function roleColor(role: string): string {
   const map: Record<string, string> = {

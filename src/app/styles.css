@@ -1494,7 +1494,8 @@ ol {
   background: #f5f7f3;
 }
 .map-node {
-  width: 244px;
+  width: 196px;
+  min-height: 64px;
   border: 1px solid #d4dfcd;
   border-radius: 10px;
   background: #fff;
@@ -1505,6 +1506,13 @@ ol {
     box-shadow var(--motion);
   overflow: hidden;
   animation: fade-in var(--motion) ease-out;
+}
+.map-node-content {
+  min-height: 64px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
 }
 .map-node header {
   display: flex;
@@ -1529,8 +1537,9 @@ ol {
   font-size: 15px;
   letter-spacing: -0.3px;
   text-transform: capitalize;
-  padding: 0 14px;
-  margin: 11px 0 5px;
+  padding: 0;
+  margin: 0;
+  line-height: 1.25;
 }
 .map-node p {
   font-size: 9px;
@@ -2910,12 +2919,12 @@ select,
 
 /* ── Live node card ── */
 .live-node {
-  width: 200px;
-  min-height: 110px;
+  width: 176px;
+  min-height: 60px;
   background: #fff;
   border: 1.5px solid #c5ddd0;
   border-radius: 10px;
-  padding: 10px 12px 9px;
+  padding: 10px 12px;
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -2923,6 +2932,12 @@ select,
   position: relative;
   box-shadow: 0 2px 8px rgba(30, 80, 55, 0.07);
   animation: live-node-in 0.35s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.live-node-content {
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 /* Entry (root) node — slightly more prominent */

@@ -22,6 +22,7 @@ import {
 } from "../../components/ui";
 import { ApplicationAccess } from "./ApplicationAccess";
 import LiveDiscoveryGraph from "./LiveDiscoveryGraph";
+import type { ApplicationGraphData } from "../application-map/graphLayout";
 import { DiscoveryDiagnosticPanel } from "./DiscoveryDiagnosticPanel";
 
 export default function Discovery({
@@ -61,6 +62,9 @@ export default function Discovery({
     map?.discovery_checkpoint?.configuration.worker_limit ?? 3,
   );
   const [automaticLimits, setAutomaticLimits] = useState(true);
+  const [selectedDiscoveryMode, setSelectedDiscoveryMode] = useState<"targeted" | "full">(
+    map?.discovery_checkpoint?.configuration.mode === "full" ? "full" : "targeted",
+  );
   const [selectedAreas, setSelectedAreas] = useState<string[]>(() => {
     const saved = map?.coverage?.discovery_catalog as
       | { selected_areas?: string[] }
@@ -119,7 +123,7 @@ export default function Discovery({
   const hasModuleInventory = selectedAuthFlows.length === 1 && !!selectedAuthFlow && (
     catalog?.module_inventory_flows?.includes(selectedAuthFlow) ?? false
   );
-  const discoveryMode = !hasEntryInventory
+  const discoveryPhase = !hasEntryInventory
     ? "entry_points" as const
     : selectedAuthFlows.length > 1
       ? selectedLoginFlow
@@ -138,14 +142,8 @@ export default function Discovery({
     setDepth(configuration.max_depth);
     setDuration(configuration.max_duration_seconds);
     setWorkerLimit(configuration.worker_limit);
-    setSelectedAuthFlows(
-      configuration.selected_auth_flows ??
-        (configuration.selected_auth_flow
-          ? [configuration.selected_auth_flow]
-          : []),
-    );
-    setSelectedAreas(configuration.selected_areas);
-    setSelectedModules(configuration.selected_modules);
+    setSelectedAreas(configuration.selected_areas ?? []);
+    setSelectedModules(configuration.selected_modules ?? []);
   }, [map?.id, map?.status, map?.discovery_checkpoint]);
   const discoveryBody = (resume: boolean, startFromScratch = false) => ({
     url,
@@ -156,11 +154,15 @@ export default function Discovery({
     worker_limit: workerLimit,
     automatic_limits: resume ? false : automaticLimits,
     credential_ref: selectedRef ?? undefined,
-    discovery_mode: startFromScratch ? "entry_points" as const : discoveryMode,
+    discovery_mode: startFromScratch
+      ? "entry_points" as const
+      : selectedDiscoveryMode === "full"
+        ? "complete" as const
+        : discoveryPhase,
     selected_auth_flow: startFromScratch ? null : selectedAuthFlow,
     selected_auth_flows: startFromScratch ? [] : selectedAuthFlows,
     selected_areas: startFromScratch ? [] : selectedAreas,
-    selected_modules: startFromScratch ? [] : selectedModules,
+    selected_modules: startFromScratch || selectedDiscoveryMode === "full" ? [] : selectedModules,
     start_from_scratch: startFromScratch,
     ...(resume && map ? { resume_application_map_id: map.id } : {}),
   });
@@ -264,6 +266,7 @@ export default function Discovery({
               }
             />
             <LiveDiscoveryGraph
+              flowGraph={(map?.discovery_checkpoint as { graph?: ApplicationGraphData } | undefined)?.graph ?? map?.coverage?.app_flow_graph as ApplicationGraphData | undefined}
               states={map?.states ?? []}
               jobStatus={job?.status}
               stateCount={map?.states.length ?? 0}
@@ -286,6 +289,13 @@ export default function Discovery({
         ) : null}
 
         {/* Map metrics */}
+        {map?.discovery_checkpoint?.progress && (
+          <dl className="metrics" aria-label="Discovery progress" aria-live="polite">
+            {Object.entries(map.discovery_checkpoint.progress).map(([key, value]) => (
+              <div key={key}><dt>{human(key)}</dt><dd>{String(value)}</dd></div>
+            ))}
+          </dl>
+        )}
         {map && (
           <div className="metrics">
             <div>
@@ -327,7 +337,7 @@ export default function Discovery({
               </p>
               <p>
                 {partial
-                  ? "You can inspect the observations. A complete map is required for test generation."
+                  ? "You can generate tests from observed states and continue discovery later."
                   : "Check the application access settings and credentials before retrying."}
               </p>
               <details>
@@ -399,7 +409,14 @@ export default function Discovery({
               </span>
             </div>
 
-            {authenticationFlows.length > 0 && (
+            <fieldset>
+              <legend>Discovery mode</legend>
+              <label><input type="radio" name="discovery-mode" checked={selectedDiscoveryMode === "targeted"} onChange={() => setSelectedDiscoveryMode("targeted")} />Targeted Discovery</label>
+              <p>Select dynamically discovered application paths.</p>
+              <label><input type="radio" name="discovery-mode" checked={selectedDiscoveryMode === "full"} onChange={() => setSelectedDiscoveryMode("full")} />Full Application Discovery</label>
+              <p>Discover the complete reachable application automatically using parallel workers.</p>
+            </fieldset>
+            {selectedDiscoveryMode === "targeted" && authenticationFlows.length > 0 && (
               <section className="discovery-scope" aria-labelledby="discovery-scope-title">
                 <h3 id="discovery-scope-title">Choose authentication flows</h3>
                 <p className="field-hint">
@@ -549,9 +566,10 @@ export default function Discovery({
                 disabled={
                   !!jobError ||
                   (!resumable && authenticationFlows.length > 0 && selectedAuthFlows.length === 0) ||
-                  (!resumable && discoveryMode === "modules" && !selectedRef) ||
-                  (!resumable && discoveryMode === "complete" && !!selectedLoginFlow && !selectedRef) ||
-                  (!resumable && discoveryMode === "deep" && selectedModules.length === 0)
+                  (selectedDiscoveryMode === "targeted" && !resumable && authenticationFlows.length > 0 && selectedAuthFlows.length === 0) ||
+                  (selectedDiscoveryMode === "targeted" && !resumable && discoveryPhase === "modules" && !selectedRef) ||
+                  (selectedDiscoveryMode === "targeted" && !resumable && discoveryPhase === "complete" && !!selectedLoginFlow && !selectedRef) ||
+                  (selectedDiscoveryMode === "targeted" && !resumable && discoveryPhase === "deep" && selectedModules.length === 0)
                 }
               >
                 {failed || partial ? (
@@ -564,11 +582,13 @@ export default function Discovery({
                   : failed || partial
                     ? "Retry discovery"
                   : hasEntryInventory
-                    ? discoveryMode === "entry_points"
+                    ? selectedDiscoveryMode === "full"
+                      ? "Discover full application"
+                      : discoveryPhase === "entry_points"
                       ? "Start discovery"
-                      : discoveryMode === "modules"
+                      : discoveryPhase === "modules"
                         ? "Discover application modules"
-                        : discoveryMode === "deep"
+                        : discoveryPhase === "deep"
                           ? catalog?.stage === "deep"
                             ? "Discover More"
                             : "Discover selected modules"

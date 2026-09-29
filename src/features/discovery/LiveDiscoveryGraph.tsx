@@ -2,12 +2,12 @@
  * LiveDiscoveryGraph — shown during an active discovery run.
  *
  * Each application state discovered by the crawler appears as a node the
- * moment it is persisted to the database. Edges are inferred from
- * `reached_via` paths (same algorithm as ApplicationMap). Nodes slide in
+ * moment it is persisted to the database. Edges come from the existing
+ * application graph transitions. Nodes slide in
  * with an entrance animation and a short pulse so the user can see the map
  * growing in real-time.
  *
- * Layout: dagre left-to-right (same as the finished ApplicationMap view).
+ * Layout: shared top-to-bottom Dagre hierarchy, derived from transitions.
  */
 
 import { useMemo, useEffect, useRef, useState } from "react";
@@ -15,6 +15,7 @@ import {
   ReactFlow,
   Background,
   Controls,
+  MiniMap,
   Handle,
   Position,
   MarkerType,
@@ -22,54 +23,14 @@ import {
   type Node,
   type ReactFlowInstance,
 } from "@xyflow/react";
-import dagre from "@dagrejs/dagre";
+import {
+  functionalStateName,
+  layoutApplicationGraph,
+  type ApplicationGraphData,
+} from "../application-map/graphLayout";
 import { Globe, Wifi, Maximize2, Minimize2 } from "lucide-react";
 import "@xyflow/react/dist/style.css";
 import type { AppState } from "../../types/api";
-import { pathEdges } from "../application-map/ApplicationMap";
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-function pageTitle(s: AppState): string {
-  try {
-    const p = new URL(s.url_pattern, "https://placeholder.invalid").pathname;
-    return p === "/"
-      ? "Home"
-      : decodeURIComponent(
-          p.split("/").filter(Boolean).at(-1) || "Page",
-        ).replaceAll("-", " ");
-  } catch {
-    return s.state_code;
-  }
-}
-
-function layoutGraph(states: AppState[]) {
-  const edges = pathEdges(states);
-  const g = new dagre.graphlib.Graph()
-    .setGraph({ rankdir: "LR", nodesep: 50, ranksep: 120 })
-    .setDefaultEdgeLabel(() => ({}));
-
-  states.forEach((s) => g.setNode(s.state_code, { width: 200, height: 110 }));
-  edges.forEach((e) => g.setEdge(e.source, e.target));
-  dagre.layout(g);
-
-  return {
-    edges,
-    nodes: states.map((s) => ({
-      id: s.state_code,
-      type: "live",
-      width: 200,
-      height: 110,
-      position: {
-        x: g.node(s.state_code).x - 100,
-        y: g.node(s.state_code).y - 55,
-      },
-      data: { state: s },
-    })),
-  };
-}
 
 // ---------------------------------------------------------------------------
 // Custom node
@@ -77,49 +38,25 @@ function layoutGraph(states: AppState[]) {
 
 function LiveStateNode({
   data,
-}: NodeProps<Node<{ state: AppState; isNew: boolean }>>) {
+}: NodeProps<Node<{ state: AppState; isNew: boolean; isEntry: boolean }>>) {
   const s = data.state;
-  const label = pageTitle(s);
-  const isEntry = s.reached_via.length === 0;
+  const label = functionalStateName(s);
+  const isEntry = data.isEntry;
 
   return (
     <div
       className={`live-node ${isEntry ? "live-node--entry" : ""} ${data.isNew ? "live-node--new" : ""}`}
     >
-      <Handle type="target" position={Position.Left} />
+      <Handle type="target" position={Position.Top} />
 
-      {/* Phase badge */}
-      <div className="live-node-phase">
-        {isEntry ? "Entry" : `Depth ${s.reached_via.length}`}
-      </div>
-
-      {/* Icon + code */}
-      <div className="live-node-header">
+      <div className="live-node-content">
         <span className="live-node-icon">
           <Globe size={13} />
         </span>
-        <span className="live-node-code">{s.state_code}</span>
-        <span className="live-node-ping" title="Freshly observed" />
+        <div className="live-node-title">{label}</div>
       </div>
 
-      {/* Page title */}
-      <div className="live-node-title">{label}</div>
-
-      {/* URL truncated */}
-      <div className="live-node-url" title={s.url_pattern}>
-        {s.url_pattern.length > 34
-          ? s.url_pattern.slice(0, 31) + "…"
-          : s.url_pattern}
-      </div>
-
-      {/* Element count */}
-      <div className="live-node-footer">
-        <span>{s.elements.length} elements</span>
-        <span className="live-node-dot" />
-        <span>Observed</span>
-      </div>
-
-      <Handle type="source" position={Position.Right} />
+      <Handle type="source" position={Position.Bottom} />
     </div>
   );
 }
@@ -158,13 +95,14 @@ function ScanningPlaceholder({ phase }: { phase: string }) {
 export default function LiveDiscoveryGraph({
   states,
   jobStatus,
-  stateCount,
   elementCount,
+  flowGraph,
 }: {
   states: AppState[];
   jobStatus?: string;
   stateCount: number;
   elementCount: number;
+  flowGraph?: ApplicationGraphData;
 }) {
   // Track which state_codes are "newly arrived" for the pop-in animation.
   // After 1.2 s we remove them from the set so the animation doesn't replay.
@@ -224,11 +162,15 @@ export default function LiveDiscoveryGraph({
       document.removeEventListener("fullscreenchange", handleFullscreenChange);
   }, []);
 
-  const graph = useMemo(() => layoutGraph(states), [states]);
+  const graph = useMemo(
+    () => layoutApplicationGraph(states, flowGraph?.edges ?? [], 176, 60),
+    [states, flowGraph],
+  );
 
   const nodes = graph.nodes.map((n) => ({
     ...n,
-    data: { ...n.data, isNew: newCodes.has(n.id) },
+    type: "live",
+    data: { ...n.data, isNew: newCodes.has(n.data.state.state_code) },
   }));
 
   const edges = graph.edges.map((e) => ({
@@ -237,9 +179,6 @@ export default function LiveDiscoveryGraph({
     animated: true,
     markerEnd: { type: MarkerType.ArrowClosed, color: "#3db882" },
     style: { stroke: "#3db882", strokeWidth: 1.8, opacity: 0.75 },
-    labelStyle: { fontSize: 10, fill: "#5a8a72" },
-    labelBgStyle: { fill: "#f0faf5" },
-    labelBgPadding: [6, 3] as [number, number],
   }));
 
   return (
@@ -250,7 +189,7 @@ export default function LiveDiscoveryGraph({
         <span className="live-graph-header-label">Live discovery</span>
         <div className="live-graph-stats">
           <span>
-            <strong>{stateCount}</strong> states
+            <strong>{graph.nodes.length}</strong> functional states
           </span>
           <span className="live-graph-sep" />
           <span>
@@ -285,6 +224,7 @@ export default function LiveDiscoveryGraph({
             >
               <Background color="#c8d9d0" gap={20} size={1} />
               <Controls showInteractive={false} />
+              <MiniMap pannable zoomable />
             </ReactFlow>
 
             <button
