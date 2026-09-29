@@ -83,6 +83,7 @@ export interface DiscoveryCheckpoint {
   configuration: {
     mode: "entry_points" | "auth_flow" | "modules" | "inventory" | "deep" | "complete";
     selected_auth_flow?: string | null;
+    selected_auth_flows?: string[];
     selected_areas: string[];
     selected_modules: string[];
     max_pages: number;

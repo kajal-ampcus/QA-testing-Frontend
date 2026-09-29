@@ -73,11 +73,14 @@ export default function Discovery({
       | undefined;
     return saved?.selected_modules ?? [];
   });
-  const [selectedAuthFlow, setSelectedAuthFlow] = useState<string | null>(() => {
+  const [selectedAuthFlows, setSelectedAuthFlows] = useState<string[]>(() => {
     const saved = map?.coverage?.discovery_catalog as
-      | { selected_auth_flow?: string | null }
+      | { selected_auth_flows?: string[]; selected_auth_flow?: string | null }
       | undefined;
-    return saved?.selected_auth_flow ?? null;
+    return (
+      saved?.selected_auth_flows ??
+      (saved?.selected_auth_flow ? [saved.selected_auth_flow] : [])
+    );
   });
 
   /**
@@ -98,26 +101,35 @@ export default function Discovery({
         modules?: DiscoveryModule[];
         authentication_flows?: DiscoveryAuthenticationFlow[];
         module_inventory_flows?: string[];
+        selected_auth_flows?: string[];
         selected_auth_flow?: string | null;
       }
     | undefined;
   const modules = catalog?.modules ?? [];
   const authenticationFlows = catalog?.authentication_flows ?? [];
+  const selectedLoginFlow = authenticationFlows.find(
+    (flow) => selectedAuthFlows.includes(flow.id) && flow.kind === "login",
+  );
+  const selectedAuthFlow = selectedLoginFlow?.id ?? selectedAuthFlows[0] ?? null;
   const chosenAuthFlow = authenticationFlows.find((flow) => flow.id === selectedAuthFlow);
   const hasEntryInventory = authenticationFlows.length > 0;
   const visibleModules = modules.filter(
-    (module) => !module.auth_flow_id || module.auth_flow_id === selectedAuthFlow,
+    (module) => !module.auth_flow_id || selectedAuthFlows.includes(module.auth_flow_id),
   );
-  const hasModuleInventory = !!selectedAuthFlow && (
+  const hasModuleInventory = selectedAuthFlows.length === 1 && !!selectedAuthFlow && (
     catalog?.module_inventory_flows?.includes(selectedAuthFlow) ?? false
   );
   const discoveryMode = !hasEntryInventory
     ? "entry_points" as const
-    : chosenAuthFlow?.kind === "login"
-      ? hasModuleInventory
-        ? "deep" as const
-        : "modules" as const
-      : "auth_flow" as const;
+    : selectedAuthFlows.length > 1
+      ? selectedLoginFlow
+        ? "complete" as const
+        : "auth_flow" as const
+      : chosenAuthFlow?.kind === "login"
+        ? hasModuleInventory
+          ? "deep" as const
+          : "modules" as const
+        : "auth_flow" as const;
 
   useEffect(() => {
     const configuration = map?.discovery_checkpoint?.configuration;
@@ -126,7 +138,12 @@ export default function Discovery({
     setDepth(configuration.max_depth);
     setDuration(configuration.max_duration_seconds);
     setWorkerLimit(configuration.worker_limit);
-    setSelectedAuthFlow(configuration.selected_auth_flow ?? null);
+    setSelectedAuthFlows(
+      configuration.selected_auth_flows ??
+        (configuration.selected_auth_flow
+          ? [configuration.selected_auth_flow]
+          : []),
+    );
     setSelectedAreas(configuration.selected_areas);
     setSelectedModules(configuration.selected_modules);
   }, [map?.id, map?.status, map?.discovery_checkpoint]);
@@ -141,6 +158,7 @@ export default function Discovery({
     credential_ref: selectedRef ?? undefined,
     discovery_mode: startFromScratch ? "entry_points" as const : discoveryMode,
     selected_auth_flow: startFromScratch ? null : selectedAuthFlow,
+    selected_auth_flows: startFromScratch ? [] : selectedAuthFlows,
     selected_areas: startFromScratch ? [] : selectedAreas,
     selected_modules: startFromScratch ? [] : selectedModules,
     start_from_scratch: startFromScratch,
@@ -383,22 +401,32 @@ export default function Discovery({
 
             {authenticationFlows.length > 0 && (
               <section className="discovery-scope" aria-labelledby="discovery-scope-title">
-                <h3 id="discovery-scope-title">Choose an authentication flow</h3>
+                <h3 id="discovery-scope-title">Choose authentication flows</h3>
                 <p className="field-hint">
-                  These entry points were observed from the application. Select the flow you want to continue with.
+                  These entry points were observed from the application. Select one or more flows to include.
                 </p>
-                <div className="authentication-flow-options" role="radiogroup" aria-labelledby="discovery-scope-title">
+                {selectedAuthFlows.length > 1 && (
+                  <p className="field-hint">
+                    {selectedLoginFlow
+                      ? "Selected entry pages and authenticated modules will be crawled."
+                      : "Selected entry pages will be crawled. Select a login flow to include authenticated modules."}
+                  </p>
+                )}
+                <div className="authentication-flow-options" aria-labelledby="discovery-scope-title">
                   {authenticationFlows.map((flow) => (
                     <label
                       key={flow.id}
-                      className={`authentication-flow-option${selectedAuthFlow === flow.id ? " is-selected" : ""}`}
+                      className={`authentication-flow-option${selectedAuthFlows.includes(flow.id) ? " is-selected" : ""}`}
                     >
                       <input
-                        type="radio"
-                        name="authentication-flow"
-                        checked={selectedAuthFlow === flow.id}
-                        onChange={() => {
-                          setSelectedAuthFlow(flow.id);
+                        type="checkbox"
+                        checked={selectedAuthFlows.includes(flow.id)}
+                        onChange={(event) => {
+                          setSelectedAuthFlows((current) =>
+                            event.target.checked
+                              ? [...current, flow.id]
+                              : current.filter((id) => id !== flow.id),
+                          );
                           setSelectedModules([]);
                         }}
                       />
@@ -409,7 +437,7 @@ export default function Discovery({
                     </label>
                   ))}
                 </div>
-                {chosenAuthFlow?.kind === "login" && hasModuleInventory && (
+                {selectedAuthFlows.length === 1 && chosenAuthFlow?.kind === "login" && hasModuleInventory && (
                   <fieldset>
                     <legend>Choose functional areas</legend>
                     <p className="field-hint">
@@ -520,8 +548,9 @@ export default function Discovery({
                 busy={discover.isPending}
                 disabled={
                   !!jobError ||
-                  (!resumable && authenticationFlows.length > 0 && !selectedAuthFlow) ||
+                  (!resumable && authenticationFlows.length > 0 && selectedAuthFlows.length === 0) ||
                   (!resumable && discoveryMode === "modules" && !selectedRef) ||
+                  (!resumable && discoveryMode === "complete" && !!selectedLoginFlow && !selectedRef) ||
                   (!resumable && discoveryMode === "deep" && selectedModules.length === 0)
                 }
               >

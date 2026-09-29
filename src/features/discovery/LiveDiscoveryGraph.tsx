@@ -20,9 +20,10 @@ import {
   MarkerType,
   type NodeProps,
   type Node,
+  type ReactFlowInstance,
 } from "@xyflow/react";
 import dagre from "@dagrejs/dagre";
-import { Globe, Wifi } from "lucide-react";
+import { Globe, Wifi, Maximize2, Minimize2 } from "lucide-react";
 import "@xyflow/react/dist/style.css";
 import type { AppState } from "../../types/api";
 import { pathEdges } from "../application-map/ApplicationMap";
@@ -191,6 +192,38 @@ export default function LiveDiscoveryGraph({
     return () => clearTimeout(timer);
   }, [states]);
 
+  // ------------------------------------------------------------
+  // FULLSCREEN
+  // Same pattern as ApplicationMap: real Fullscreen API on the canvas
+  // element itself, kept in sync via the fullscreenchange event (also
+  // covers the user pressing Esc), with a re-fit once the resize lands.
+  // ------------------------------------------------------------
+  const canvasRef = useRef<HTMLDivElement>(null);
+  const rfInstance = useRef<ReactFlowInstance<any, any> | null>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  const toggleFullscreen = async () => {
+    if (!document.fullscreenElement) {
+      await canvasRef.current?.requestFullscreen();
+    } else {
+      await document.exitFullscreen();
+    }
+  };
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      const active = document.fullscreenElement === canvasRef.current;
+      setIsFullscreen(active);
+      requestAnimationFrame(() => {
+        rfInstance.current?.fitView({ padding: 0.25, maxZoom: 1.1 });
+      });
+    };
+
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
+    return () =>
+      document.removeEventListener("fullscreenchange", handleFullscreenChange);
+  }, []);
+
   const graph = useMemo(() => layoutGraph(states), [states]);
 
   const nodes = graph.nodes.map((n) => ({
@@ -233,24 +266,41 @@ export default function LiveDiscoveryGraph({
       </div>
 
       {/* Graph canvas */}
-      <div className="live-graph-canvas">
+      <div ref={canvasRef} className="live-graph-canvas">
         {states.length === 0 ? (
           <ScanningPlaceholder phase={jobStatus ?? ""} />
         ) : (
-          <ReactFlow
-            nodes={nodes}
-            edges={edges}
-            nodeTypes={nodeTypes}
-            fitView
-            fitViewOptions={{ padding: 0.25, maxZoom: 1.1 }}
-            nodesDraggable={false}
-            nodesConnectable={false}
-            minZoom={0.1}
-            maxZoom={2}
-          >
-            <Background color="#c8d9d0" gap={20} size={1} />
-            <Controls showInteractive={false} />
-          </ReactFlow>
+          <>
+            <ReactFlow
+              nodes={nodes}
+              edges={edges}
+              nodeTypes={nodeTypes}
+              fitView
+              fitViewOptions={{ padding: 0.25, maxZoom: 1.1 }}
+              nodesDraggable={false}
+              nodesConnectable={false}
+              onInit={(instance) => (rfInstance.current = instance)}
+              minZoom={0.1}
+              maxZoom={2}
+            >
+              <Background color="#c8d9d0" gap={20} size={1} />
+              <Controls showInteractive={false} />
+            </ReactFlow>
+
+            <button
+              type="button"
+              className="graph-fullscreen-btn"
+              onClick={toggleFullscreen}
+              title={isFullscreen ? "Exit fullscreen" : "Fullscreen"}
+              aria-label={isFullscreen ? "Exit fullscreen" : "Fullscreen"}
+            >
+              {isFullscreen ? (
+                <Minimize2 size={17} />
+              ) : (
+                <Maximize2 size={17} />
+              )}
+            </button>
+          </>
         )}
       </div>
 

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ReactFlow,
   Background,
@@ -9,9 +9,10 @@ import {
   MarkerType,
   type NodeProps,
   type Node,
+  type ReactFlowInstance,
 } from "@xyflow/react";
 import dagre from "@dagrejs/dagre";
-import { Globe, Search, Network } from "lucide-react";
+import { Globe, Search, Network, Maximize2, Minimize2 } from "lucide-react";
 import "@xyflow/react/dist/style.css";
 import type { AppMap, AppState } from "../../types/api";
 import {
@@ -133,6 +134,42 @@ export default function ApplicationMap({
   const [selected, setSelected] = useState<AppState>();
   const [hover, setHover] = useState<string>();
   const [search, setSearch] = useState("");
+
+  // ------------------------------------------------------------
+  // FULLSCREEN
+  // Uses the real browser Fullscreen API so the graph canvas takes
+  // over the entire screen (not just a CSS-expanded box), and keeps
+  // React state in sync so the icon/label flips and Esc is handled.
+  // ------------------------------------------------------------
+  const graphRef = useRef<HTMLDivElement>(null);
+  const rfInstance = useRef<ReactFlowInstance<any, any> | null>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  const toggleFullscreen = async () => {
+    if (!document.fullscreenElement) {
+      await graphRef.current?.requestFullscreen();
+    } else {
+      await document.exitFullscreen();
+    }
+  };
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      const active = document.fullscreenElement === graphRef.current;
+      setIsFullscreen(active);
+      // Re-fit the graph once the browser has finished resizing the
+      // element, so the whole map is centered and legible at the new
+      // (much larger, or restored) canvas size.
+      requestAnimationFrame(() => {
+        rfInstance.current?.fitView({ padding: 0.2, maxZoom: 1 });
+      });
+    };
+
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
+    return () =>
+      document.removeEventListener("fullscreenchange", handleFullscreenChange);
+  }, []);
+
   const graph = useMemo(() => {
     const edges = pathEdges(map.states);
     const g = new dagre.graphlib.Graph()
@@ -235,7 +272,7 @@ export default function ApplicationMap({
             description="Review discovery details and run discovery again."
           />
         ) : (
-          <div className="graph">
+          <div ref={graphRef} className="graph">
             <ReactFlow
               nodes={nodes}
               edges={edges}
@@ -247,6 +284,7 @@ export default function ApplicationMap({
               onNodeClick={(_, n) => setSelected(n.data.state)}
               onNodeMouseEnter={(_, n) => setHover(n.id)}
               onNodeMouseLeave={() => setHover(undefined)}
+              onInit={(instance) => (rfInstance.current = instance)}
               minZoom={0.1}
               maxZoom={1.8}
             >
@@ -259,6 +297,16 @@ export default function ApplicationMap({
                 zoomable
               />
             </ReactFlow>
+
+            <button
+              type="button"
+              className="graph-fullscreen-btn"
+              onClick={toggleFullscreen}
+              title={isFullscreen ? "Exit fullscreen" : "Fullscreen"}
+              aria-label={isFullscreen ? "Exit fullscreen" : "Fullscreen"}
+            >
+              {isFullscreen ? <Minimize2 size={17} /> : <Maximize2 size={17} />}
+            </button>
           </div>
         )}
         <div className="graph-legend">
@@ -279,19 +327,19 @@ export default function ApplicationMap({
         title={
           map.status === "COMPLETE"
             ? "Turn observations into test coverage"
-            : "Generate from the partial graph"
+            : "Complete discovery to continue"
         }
         description={
           map.status === "COMPLETE"
             ? "Design test cases using your approved requirement and this application map."
-            : "Use the states discovered so far now, then continue discovery and generate only for newly added states later."
+            : "Test generation needs a complete map. Review discovery details and retry."
         }
         label={
           map.status === "COMPLETE"
             ? "Continue to test generation"
-            : "Generate from partial graph"
+            : "Review discovery"
         }
-        onClick={onNext}
+        onClick={map.status === "COMPLETE" ? onNext : onRetry}
       />
       {selected && (
         <DetailDrawer
@@ -305,18 +353,6 @@ export default function ApplicationMap({
           <label>
             URL<span className="value">{selected.url_pattern}</span>
           </label>
-          {selected.evidence_ref && (
-            <>
-              <h3>Observed screenshot</h3>
-              <a href={selected.evidence_ref} target="_blank" rel="noreferrer">
-                <img
-                  src={selected.evidence_ref}
-                  alt={`Observed state ${selected.state_code}`}
-                  style={{ width: "100%", borderRadius: "8px", border: "1px solid var(--border)" }}
-                />
-              </a>
-            </>
-          )}
           <h3>Navigation path</h3>
           {selected.reached_via.length ? (
             <ol className="path-list">
