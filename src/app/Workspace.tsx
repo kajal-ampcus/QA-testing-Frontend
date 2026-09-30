@@ -188,6 +188,13 @@ export default function Workspace({ id }: { id: string }) {
     },
   );
   useEffect(() => {
+    if (!generation.isPending && !coverageGeneration.isPending) return;
+    const timer = window.setInterval(() => {
+      void tests.refetch();
+    }, 2000);
+    return () => window.clearInterval(timer);
+  }, [generation.isPending, coverageGeneration.isPending, tests.refetch]);
+  useEffect(() => {
     if (!generation.isPending) return;
     const warn = (e: BeforeUnloadEvent) => {
       e.preventDefault();
@@ -411,6 +418,7 @@ export default function Workspace({ id }: { id: string }) {
                   requirement={r}
                   map={map.data}
                   pending={generation.isPending}
+                  savedCount={currentTests.length}
                   error={generation.error}
                   result={generation.data}
                   onGenerate={(scope, areaIds, moduleIds) =>
@@ -421,6 +429,7 @@ export default function Workspace({ id }: { id: string }) {
               )}{" "}
               {stage === 5 && (
                 <TestCases
+                  projectId={id}
                   tests={tests.data || []}
                   requirements={all}
                   map={map.data}

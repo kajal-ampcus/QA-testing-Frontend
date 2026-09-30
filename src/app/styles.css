@@ -523,7 +523,8 @@ ol {
   font-size: 12px;
 }
 .card-heading > .badge,
-.card-heading > .button {
+.card-heading > .button,
+.card-heading > .actions {
   margin-left: auto;
 }
 .heading-icon {
@@ -1434,6 +1435,11 @@ ol {
 .test-card > .card-heading {
   padding: 23px 25px;
   margin: 0;
+  flex-wrap: wrap;
+  row-gap: 12px;
+}
+.test-card > .card-heading .actions {
+  margin-top: 0;
 }
 .map-toolbar {
   border-top: 1px solid #edf0e7;

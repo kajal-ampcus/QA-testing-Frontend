@@ -6,6 +6,7 @@ import {
   ListChecks,
   Download,
   ChevronRight,
+  Plus,
 } from "lucide-react";
 import type {
   Requirement,
@@ -13,6 +14,8 @@ import type {
   TestCase,
   Generation,
 } from "../../types/api";
+import { api } from "../../api/client";
+import { useAction } from "../../hooks/useAction";
 import {
   Button,
   Card,
@@ -25,10 +28,215 @@ import {
 } from "../../components/ui";
 import { human } from "../../utils/workflow";
 import { exportCompleteExcelReport } from "./exportExcel";
+
+function lines(value: string) {
+  return value
+    .split(/\r?\n/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function CreateEdgeCaseForm({
+  projectId,
+  requirements,
+  map,
+  defaultRequirementId,
+  onClose,
+}: {
+  projectId: string;
+  requirements: Requirement[];
+  map?: AppMap | null;
+  defaultRequirementId: string;
+  onClose: () => void;
+}) {
+  const first =
+    requirements.find((item) => item.id === defaultRequirementId) ||
+    requirements[0];
+  const [requirementId, setRequirementId] = useState(first?.id || "");
+  const requirement = requirements.find((item) => item.id === requirementId);
+  const [acId, setAcId] = useState(
+    requirement?.acceptance_criteria[0]?.id || "",
+  );
+  const [category, setCategory] = useState<
+    "POSITIVE" | "NEGATIVE" | "EDGE_CASE"
+  >("EDGE_CASE");
+  const [title, setTitle] = useState("");
+  const [objective, setObjective] = useState("");
+  const [expected, setExpected] = useState("");
+  const [preconditions, setPreconditions] = useState("");
+  const [stepNotes, setStepNotes] = useState("");
+  const [startState, setStartState] = useState(
+    map?.states[0]?.state_code || "",
+  );
+  const create = useAction(
+    projectId,
+    (body: Parameters<typeof api.createTestCase>[1]) =>
+      api.createTestCase(projectId, body),
+    onClose,
+  );
+  return (
+    <form
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (!title.trim() || !expected.trim() || !requirementId || !acId) {
+          return;
+        }
+        create.mutate({
+          requirement_id: requirementId,
+          ...(map?.id ? { application_map_id: map.id } : {}),
+          title: title.trim(),
+          objective:
+            objective.trim() || `Verify this edge case: ${title.trim()}`,
+          expected_result: expected.trim(),
+          category,
+          traceability: [acId],
+          preconditions: lines(preconditions),
+          step_notes: lines(stepNotes),
+          ...(startState ? { start_state_code: startState } : {}),
+        });
+      }}
+    >
+      <p>
+        Write a custom scenario the generator missed — empty values, limits,
+        unusual sequences, or role-specific paths.
+      </p>
+      <label>
+        Requirement
+        <select
+          required
+          value={requirementId}
+          onChange={(event) => {
+            const nextId = event.target.value;
+            setRequirementId(nextId);
+            const next = requirements.find((item) => item.id === nextId);
+            setAcId(next?.acceptance_criteria[0]?.id || "");
+          }}
+        >
+          {requirements.map((item) => (
+            <option value={item.id} key={item.id}>
+              {item.req_code} · {item.title}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label>
+        Acceptance criterion
+        <select
+          required
+          value={acId}
+          onChange={(event) => setAcId(event.target.value)}
+        >
+          {(requirement?.acceptance_criteria || []).map((ac) => (
+            <option value={ac.id} key={ac.id}>
+              {ac.id}: {ac.text}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label>
+        Category
+        <select
+          value={category}
+          onChange={(event) =>
+            setCategory(
+              event.target.value as "POSITIVE" | "NEGATIVE" | "EDGE_CASE",
+            )
+          }
+        >
+          <option value="EDGE_CASE">Edge case</option>
+          <option value="NEGATIVE">Negative</option>
+          <option value="POSITIVE">Positive</option>
+        </select>
+      </label>
+      <label>
+        Title
+        <input
+          required
+          minLength={3}
+          placeholder="Login with CAPTCHA at retry limit"
+          value={title}
+          onChange={(event) => setTitle(event.target.value)}
+        />
+      </label>
+      <label>
+        What this verifies
+        <textarea
+          rows={2}
+          placeholder="Confirm the application rejects the action at this boundary."
+          value={objective}
+          onChange={(event) => setObjective(event.target.value)}
+        />
+      </label>
+      {!!map?.states.length && (
+        <label>
+          Starting page
+          <select
+            value={startState}
+            onChange={(event) => setStartState(event.target.value)}
+          >
+            {map.states.map((state) => (
+              <option value={state.state_code} key={state.state_code}>
+                {state.state_code} · {state.url_pattern}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+      <label>
+        Steps to reproduce
+        <span className="field-hint">
+          Optional. One action per line. A navigate step is added for you.
+        </span>
+        <textarea
+          rows={4}
+          placeholder={"Enter an empty quantity\nSubmit the order"}
+          value={stepNotes}
+          onChange={(event) => setStepNotes(event.target.value)}
+        />
+      </label>
+      <label>
+        Preconditions
+        <span className="field-hint">Optional. One condition per line.</span>
+        <textarea
+          rows={2}
+          placeholder="User is signed in as Kitchen"
+          value={preconditions}
+          onChange={(event) => setPreconditions(event.target.value)}
+        />
+      </label>
+      <label>
+        Expected result
+        <textarea
+          required
+          minLength={3}
+          rows={3}
+          placeholder="The form stays on the same page and shows a quantity validation error."
+          value={expected}
+          onChange={(event) => setExpected(event.target.value)}
+        />
+      </label>
+      {!!create.error && <ErrorState error={create.error} />}
+      <div className="actions">
+        <Button type="button" variant="secondary" onClick={onClose}>
+          Cancel
+        </Button>
+        <Button
+          type="submit"
+          busy={create.isPending}
+          disabled={!requirementId || !acId || !map}
+        >
+          <Plus size={15} />
+          Save edge case
+        </Button>
+      </div>
+    </form>
+  );
+}
 export function Generate({
   requirement: r,
   map,
   pending,
+  savedCount = 0,
   error,
   result,
   onGenerate,
@@ -37,6 +245,7 @@ export function Generate({
   requirement: Requirement;
   map: AppMap;
   pending: boolean;
+  savedCount?: number;
   error: unknown;
   result?: Generation;
   onGenerate: (
@@ -116,7 +325,11 @@ export function Generate({
         {pending && (
           <ProgressIndicator
             label="Designing your test cases"
-            description="The AI is processing your requirement and application map. Results will appear when generation finishes. Keep this workspace open."
+            description={
+              savedCount > 0
+                ? `${savedCount} test case${savedCount === 1 ? "" : "s"} already saved. The next batch of acceptance criteria is generating.`
+                : `Generating ${r.acceptance_criteria.length} acceptance criteria from the application map in one batch.`
+            }
           />
         )}
         {!!error && <ErrorState error={error} />}
@@ -220,6 +433,7 @@ export function Generate({
   );
 }
 export default function TestCases({
+  projectId,
   tests,
   requirements,
   map,
@@ -228,6 +442,7 @@ export default function TestCases({
   coverageError,
   onCompleteCoverage,
 }: {
+  projectId: string;
   tests: TestCase[];
   requirements: Requirement[];
   map?: AppMap | null;
@@ -242,6 +457,7 @@ export default function TestCases({
   const [confidence, setConfidence] = useState("");
   const [reqId, setReqId] = useState("");
   const [selected, setSelected] = useState<TestCase>();
+  const [creating, setCreating] = useState(false);
   const [exportingExcel, setExportingExcel] = useState(false);
   const [exportError, setExportError] = useState("");
   const filtered = tests.filter(
@@ -299,6 +515,16 @@ export default function TestCases({
             <p>Traceable scenarios. Clear intent. Ready for your review.</p>
           </div>
           <div className="actions">
+            <Button
+              onClick={() => {
+                setSelected(undefined);
+                setCreating(true);
+              }}
+              disabled={!requirements.length || !map}
+            >
+              <Plus size={15} />
+              Add edge case
+            </Button>
             <Button
               variant="secondary"
               onClick={exportTests}
@@ -416,7 +642,7 @@ export default function TestCases({
             description={
               tests.length
                 ? "Adjust your search or filters to see more scenarios."
-                : "Complete discovery and generate tests for an approved requirement."
+                : "Generate tests, or add a custom edge case from this page."
             }
           />
         ) : (
@@ -507,6 +733,20 @@ export default function TestCases({
           <span>Drafts are not execution results</span>
         </div>
       </Card>
+      {creating && (
+        <DetailDrawer
+          title="Add custom edge case"
+          onClose={() => setCreating(false)}
+        >
+          <CreateEdgeCaseForm
+            projectId={projectId}
+            requirements={requirements}
+            map={map}
+            defaultRequirementId={reqId}
+            onClose={() => setCreating(false)}
+          />
+        </DetailDrawer>
+      )}
       {selected && (
         <DetailDrawer
           title={selected.current.title}

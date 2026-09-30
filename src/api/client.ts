@@ -292,4 +292,20 @@ export const api = {
       selected_area_ids,
       selected_module_ids,
     }),
+
+  createTestCase: (
+    projectId: string,
+    body: {
+      requirement_id: string;
+      application_map_id?: string;
+      title: string;
+      objective: string;
+      expected_result: string;
+      category?: "POSITIVE" | "NEGATIVE" | "EDGE_CASE";
+      traceability: string[];
+      preconditions?: string[];
+      step_notes?: string[];
+      start_state_code?: string;
+    },
+  ) => request<TestCase>(`/test-cases/projects/${projectId}`, body),
 };
