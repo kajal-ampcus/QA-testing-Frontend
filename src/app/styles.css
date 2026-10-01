@@ -3330,15 +3330,39 @@ select,
 .automation-history li {
   display: flex;
   justify-content: space-between;
-  gap: 12px;
+  gap: 16px;
   align-items: center;
-  padding: 10px 0;
+  padding: 12px 0;
   border-top: 1px solid #e7eee2;
 }
 .automation-cases label {
   display: flex;
-  gap: 10px;
+  flex-direction: row;
   align-items: flex-start;
+  gap: 12px;
+  min-width: 0;
+  flex: 1;
+  margin: 0;
+  font-weight: 500;
+}
+.automation-cases input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  min-width: 16px;
+  flex: 0 0 16px;
+  margin: 3px 0 0;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  accent-color: #3d6b4f;
+}
+.automation-cases label span {
+  min-width: 0;
+}
+.automation-cases label strong {
+  display: block;
+  font-size: 14px;
+  line-height: 1.4;
 }
 .automation-history button {
   display: flex;
@@ -3370,6 +3394,17 @@ select,
 .automation-banner {
   font-weight: 650;
   letter-spacing: -0.2px;
+  margin: 0;
+}
+.automation-result-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.automation-result-head .actions {
+  margin-top: 0;
 }
 .automation-status,
 .automation-counts {

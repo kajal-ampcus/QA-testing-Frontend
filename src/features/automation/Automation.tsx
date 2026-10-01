@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Code2, Download, FolderTree } from "lucide-react";
 import { api } from "../../api/client";
@@ -77,7 +77,17 @@ export default function Automation({
     queryFn: ({ signal }) => api.automationGeneration(projectId, openedId || "", signal),
     enabled: !!openedId && openedId !== generate.data?.generation_id,
   });
-  const result = openedId ? opened.data : generate.data;
+  const latestId = history.data?.generations[0]?.generation_id ?? null;
+  useEffect(() => {
+    if (generate.data) setOpenedId(generate.data.generation_id);
+  }, [generate.data]);
+  useEffect(() => {
+    if (!openedId && latestId) setOpenedId(latestId);
+  }, [latestId, openedId]);
+  const result =
+    generate.data && generate.data.generation_id === openedId
+      ? generate.data
+      : opened.data;
   const preview = result?.sources.find((item) => item.path === file)?.content;
   const toggle = (id: string) => {
     setSelected((current) =>
@@ -158,7 +168,15 @@ export default function Automation({
           {generate.error && <ErrorState error={generate.error} />}
           {opened.error && <ErrorState error={opened.error} />}
         </Card>
-        {result && <Result result={result} projectId={projectId} file={file} preview={preview} onFile={setFile} />}
+        {result && (
+          <Result
+            projectId={projectId}
+            result={result}
+            file={file}
+            preview={preview}
+            onFile={setFile}
+          />
+        )}
       </div>
       <aside>
         <Card className="guide-card">
@@ -197,30 +215,17 @@ export default function Automation({
   );
 }
 
-function Result({
-  result,
+function SuiteActions({
   projectId,
-  file,
-  preview,
-  onFile,
+  result,
 }: {
-  result: AutomationGeneration;
   projectId: string;
-  file: string;
-  preview?: string;
-  onFile: (path: string) => void;
+  result: AutomationGeneration;
 }) {
   const [downloading, setDownloading] = useState(false);
   const [downloadError, setDownloadError] = useState("");
   return (
-    <Card>
-      <p className="automation-banner">{result.label}</p>
-      <div className="automation-status">
-        <StatusBadge status={result.review_status} />
-        <StatusBadge status={result.risk_level} />
-        <StatusBadge status={result.verification.status} />
-        {result.approval_required && <span className="muted">Tester approval required</span>}
-      </div>
+    <>
       <div className="actions">
         <Button
           variant="secondary"
@@ -244,13 +249,37 @@ function Result({
             Open in VS Code
           </a>
         )}
-        {result.cursor_url && (
-          <a className="button secondary" href={result.cursor_url}>
-            Open in Cursor
-          </a>
-        )}
       </div>
       {downloadError && <ErrorState error={new Error(downloadError)} />}
+    </>
+  );
+}
+
+function Result({
+  projectId,
+  result,
+  file,
+  preview,
+  onFile,
+}: {
+  projectId: string;
+  result: AutomationGeneration;
+  file: string;
+  preview?: string;
+  onFile: (path: string) => void;
+}) {
+  return (
+    <Card>
+      <div className="automation-result-head">
+        <p className="automation-banner">{result.label}</p>
+        <SuiteActions projectId={projectId} result={result} />
+      </div>
+      <div className="automation-status">
+        <StatusBadge status={result.review_status} />
+        <StatusBadge status={result.risk_level} />
+        <StatusBadge status={result.verification.status} />
+        {result.approval_required && <span className="muted">Tester approval required</span>}
+      </div>
       {result.blocked.length > 0 && (
         <div className="automation-blocked">
           <h3>Blocked during generation</h3>
