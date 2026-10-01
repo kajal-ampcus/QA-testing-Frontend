@@ -8,6 +8,8 @@ import type {
   TestCase,
   Generation,
   BulkReviewResult,
+  AutomationGeneration,
+  AutomationList,
 } from "../types/api";
 
 export class ApiError extends Error {
@@ -356,4 +358,47 @@ export const api = {
 
   deleteTest: (testCaseId: string) =>
     request<void>(`/test-cases/${testCaseId}`, undefined, undefined, "DELETE"),
+
+  automation: (id: string, signal?: AbortSignal) =>
+    request<AutomationList>(`/automation/projects/${id}`, undefined, signal),
+
+  automationGeneration: (
+    projectId: string,
+    generationId: string,
+    signal?: AbortSignal,
+  ) =>
+    request<AutomationGeneration>(
+      `/automation/projects/${projectId}/generations/${generationId}`,
+      undefined,
+      signal,
+    ),
+
+  generateAutomation: (projectId: string, testCaseIds: string[]) =>
+    request<AutomationGeneration>(`/automation/projects/${projectId}/generate`, {
+      test_case_ids: testCaseIds,
+    }),
+
+  downloadAutomation: async (projectId: string, generationId: string) => {
+    const headers: Record<string, string> = {};
+    const apiKey = import.meta.env.VITE_API_KEY;
+    if (apiKey) headers["X-API-Key"] = apiKey;
+    const base = (import.meta.env.VITE_API_BASE_URL || "/api/v1").replace(
+      /\/$/,
+      "",
+    );
+    const response = await fetch(
+      `${base}/automation/projects/${projectId}/generations/${generationId}/download`,
+      { headers },
+    );
+    if (!response.ok) {
+      throw new ApiError(response.status, "Download failed. Please try again.");
+    }
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `playwright-${generationId}.zip`;
+    link.click();
+    URL.revokeObjectURL(url);
+  },
 };

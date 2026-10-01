@@ -6,10 +6,11 @@ import {
   Network,
   Sparkles,
   ListChecks,
+  Code2,
   LockKeyhole,
 } from "lucide-react";
 import { stages } from "../../utils/workflow";
-const icons = [FileText, ShieldCheck, Radar, Network, Sparkles, ListChecks];
+const icons = [FileText, ShieldCheck, Radar, Network, Sparkles, ListChecks, Code2];
 export function AnimatedConnector({
   complete,
   active,
@@ -94,7 +95,7 @@ export function WorkflowStepper({
             disabled={i > available}
             onClick={() => onChange(i)}
           />
-          {i < 5 && (
+          {i < stages.length - 1 && (
             <AnimatedConnector complete={completed[i]} active={running === i} />
           )}
         </div>

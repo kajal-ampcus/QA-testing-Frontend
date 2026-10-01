@@ -27,6 +27,7 @@ import {
   Timeline,
   DetailDrawer,
   EmptyState,
+  NextAction,
 } from "../../components/ui";
 import { human } from "../../utils/workflow";
 import { exportCompleteExcelReport } from "./exportExcel";
@@ -511,6 +512,9 @@ export default function TestCases({
   completingCoverage,
   coverageError,
   onCompleteCoverage,
+  approvals = [],
+  requirement,
+  onNext,
 }: {
   projectId: string;
   tests: TestCase[];
@@ -522,6 +526,7 @@ export default function TestCases({
   onCompleteCoverage?: () => void;
   approvals?: Approval[];
   requirement?: Requirement;
+  onNext?: () => void;
 }) {
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("");
@@ -642,6 +647,12 @@ export default function TestCases({
               <Download size={15} />
               Export Excel
             </Button>
+            {onNext && (
+              <Button onClick={onNext}>
+                Continue to Automation
+                <ArrowRight size={15} />
+              </Button>
+            )}
           </div>
         </div>
         {exportError && <p className="notice error">{exportError}</p>}
@@ -867,6 +878,14 @@ export default function TestCases({
             <span>Select, edit if needed, then approve the batch</span>
           ) : null}
         </div>
+        {onNext && (
+          <NextAction
+            title="Generate the Playwright suite"
+            description="Only approved cases for this requirement and map are eligible. Drafts stay listed with the reason they are blocked."
+            label="Continue to Automation"
+            onClick={onNext}
+          />
+        )}
       </Card>
       {creating && (
         <DetailDrawer

@@ -226,3 +226,84 @@ export interface BulkReviewResult {
   failed: { test_case_id: string; tc_code?: string | null; error: string }[];
   test_cases: TestCase[];
 }
+
+export interface AutomationScript {
+  script_id: string;
+  script_code: string;
+  test_case_id: string;
+  test_case_code: string;
+  test_case_version: number;
+  requirement_id: string | null;
+  requirement_version: number | null;
+  application_map_id: string;
+  application_map_version: number;
+  framework: string;
+  file_path: string;
+  risk_level: string;
+  review_status: string;
+  blocked_reason: string | null;
+  selector_strategy: Record<string, unknown>[];
+}
+
+export interface AutomationSource {
+  path: string;
+  content: string;
+}
+
+export interface AutomationLint {
+  hardcoded_sleep: number;
+  literal_credentials: number;
+  xpath_fallback: number;
+  missing_traceability: number;
+  unsupported_blocked_selectors: number;
+  test_only: number;
+  missing_await: number;
+  destructive_not_skipped: number;
+  findings: { path: string; line: number; rule: string; message: string }[];
+}
+
+export interface AutomationVerification {
+  status: string;
+  tsc: string;
+  playwright_list: string;
+  detail: string;
+}
+
+export interface AutomationGeneration {
+  generation_id: string;
+  created_at: string | null;
+  scripts: AutomationScript[];
+  blocked: {
+    test_case_id: string;
+    test_case_code: string;
+    test_case_version: number;
+    reason: string;
+  }[];
+  file_tree: string[];
+  selector_summary: Record<string, number>;
+  lint: AutomationLint;
+  risk_level: string;
+  review_status: string;
+  approval_required: boolean;
+  approval_ids: string[];
+  verification: AutomationVerification;
+  download_url: string;
+  vscode_url: string | null;
+  cursor_url: string | null;
+  executed: boolean;
+  label: string;
+  sources: AutomationSource[];
+}
+
+export interface AutomationList {
+  generations: {
+    generation_id: string;
+    created_at: string | null;
+    risk_level: string;
+    review_status: string;
+    verification_status: string;
+    script_count: number;
+    blocked_count: number;
+    approval_required: boolean;
+  }[];
+}

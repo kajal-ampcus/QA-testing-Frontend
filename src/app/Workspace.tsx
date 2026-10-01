@@ -25,6 +25,7 @@ const ApplicationMap = lazy(
   () => import("../features/application-map/ApplicationMap"),
 );
 const TestCases = lazy(() => import("../features/test-cases/TestCases"));
+const Automation = lazy(() => import("../features/automation/Automation"));
 const Generate = lazy(() =>
   import("../features/test-cases/TestCases").then((m) => ({
     default: m.Generate,
@@ -100,6 +101,10 @@ export default function Workspace({ id }: { id: string }) {
     queryKey: [...key, "tests"],
     queryFn: ({ signal }) => api.tests(id, signal),
   });
+  const automation = useQuery({
+    queryKey: [...key, "automation"],
+    queryFn: ({ signal }) => api.automation(id, signal),
+  });
   const mapEnabled =
     project.isSuccess &&
     (project.data.has_application_map ??
@@ -132,7 +137,7 @@ export default function Workspace({ id }: { id: string }) {
       : r.status !== "APPROVED"
         ? 1
         : ["COMPLETE", "PARTIAL"].includes(map.data?.status || "") && !running
-          ? 5
+          ? 6
           : map.data
             ? 3
             : 2;
@@ -229,12 +234,14 @@ export default function Workspace({ id }: { id: string }) {
     requirements.error ||
     approvals.error ||
     tests.error ||
+    automation.error ||
     map.error;
   const loading =
     project.isPending ||
     requirements.isPending ||
     approvals.isPending ||
     tests.isPending ||
+    automation.isPending ||
     (mapEnabled && map.isPending);
   const currentTests =
     r && map.data
@@ -252,6 +259,7 @@ export default function Workspace({ id }: { id: string }) {
     !!map.data && (reviewed === map.data.id || currentTests.length > 0),
     currentTests.length > 0,
     currentTests.length > 0,
+    (automation.data?.generations.length ?? 0) > 0,
   ];
   return (
     <Shell
@@ -266,6 +274,7 @@ export default function Workspace({ id }: { id: string }) {
             void requirements.refetch();
             void approvals.refetch();
             void tests.refetch();
+            void automation.refetch();
             if (mapEnabled) void map.refetch();
             if (jobId) void job.refetch();
           }}
@@ -302,6 +311,7 @@ export default function Workspace({ id }: { id: string }) {
             void requirements.refetch();
             void approvals.refetch();
             void tests.refetch();
+            void automation.refetch();
             if (mapEnabled) void map.refetch();
           }}
         />
@@ -333,7 +343,7 @@ export default function Workspace({ id }: { id: string }) {
               Add requirement
             </Button>
             <span className="workspace-progress">
-              {complete.filter(Boolean).length} of 6 stages complete
+              {complete.filter(Boolean).length} of {stages.length} stages complete
             </span>
           </div>
           <WorkflowStepper
@@ -345,7 +355,8 @@ export default function Workspace({ id }: { id: string }) {
           />
           <div className="stage-heading">
             <span className="eyebrow">
-              STEP {String(stage + 1).padStart(2, "0")} / 06
+              STEP {String(stage + 1).padStart(2, "0")} /{" "}
+              {String(stages.length).padStart(2, "0")}
             </span>
             <span>{stages[stage]}</span>
             <span className="stage-line" />
@@ -449,6 +460,15 @@ export default function Workspace({ id }: { id: string }) {
                   coverageError={coverageGeneration.error}
                   onCompleteCoverage={() => coverageGeneration.mutate()}
                   approvals={approvals.data || []}
+                  requirement={r}
+                  onNext={() => navigateStage(6)}
+                />
+              )}{" "}
+              {stage === 6 && (
+                <Automation
+                  projectId={id}
+                  tests={currentTests}
+                  map={map.data}
                   requirement={r}
                 />
               )}{" "}

@@ -1013,8 +1013,8 @@ ol {
   overflow-x: auto;
 }
 .workflow-segment {
-  flex: 1;
-  min-width: 105px;
+  flex: 1 1 0;
+  min-width: 0;
   position: relative;
 }
 .workflow-node {
@@ -1048,7 +1048,8 @@ ol {
 .workflow-node strong {
   font-size: 10px;
   font-weight: 500;
-  white-space: nowrap;
+  line-height: 1.25;
+  white-space: normal;
 }
 .workflow-node small {
   font-size: 8px;
@@ -2073,7 +2074,7 @@ tbody tr:hover {
     padding-right: 5px;
   }
   .workflow-segment {
-    min-width: 97px;
+    min-width: 0;
   }
   .workflow-node strong {
     font-size: 9px;
@@ -2262,7 +2263,7 @@ tbody tr:hover {
     font-size: 9px;
   }
   .workflow-segment {
-    min-width: 100px;
+    min-width: 0;
   }
   .stage-heading > .muted {
     display: none;
@@ -3310,4 +3311,121 @@ select,
 
 .live-node--entry .react-flow__handle {
   background: var(--accent);
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+.automation-cases,
+.automation-blocked ul,
+.automation-history,
+.file-tree {
+  list-style: none;
+  margin: 16px 0 0;
+  padding: 0;
+}
+.automation-cases li,
+.automation-history li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 0;
+  border-top: 1px solid #e7eee2;
+}
+.automation-cases label {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+.automation-history button {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  padding: 0;
+}
+.automation-cases small,
+.automation-history small,
+.automation-blocked span {
+  display: block;
+  color: #7d8b76;
+  font-size: 12px;
+}
+.automation-blocked {
+  margin-top: 18px;
+}
+.automation-blocked h3,
+.automation-files h3 {
+  font-size: 13px;
+  margin: 0 0 8px;
+}
+.automation-banner {
+  font-weight: 650;
+  letter-spacing: -0.2px;
+}
+.automation-status,
+.automation-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin: 12px 0;
+}
+.automation-counts div {
+  min-width: 92px;
+  padding: 8px 10px;
+  background: #f6f8f3;
+  border-radius: 10px;
+}
+.automation-counts dt {
+  font-size: 10px;
+  color: #7d8b76;
+}
+.automation-counts dd {
+  margin: 2px 0 0;
+  font-size: 16px;
+}
+.automation-files {
+  display: grid;
+  grid-template-columns: minmax(180px, 280px) minmax(0, 1fr);
+  gap: 16px;
+  margin-top: 16px;
+}
+.file-tree button {
+  border: 0;
+  background: transparent;
+  text-align: left;
+  font: inherit;
+  font-size: 12px;
+  color: #3e5344;
+  cursor: pointer;
+  padding: 3px 0;
+}
+.file-tree button[aria-current="true"] {
+  font-weight: 650;
+}
+.source-preview {
+  margin: 0;
+  max-height: 420px;
+  overflow: auto;
+  padding: 14px;
+  border-radius: 12px;
+  background: #1d261f;
+  color: #e7f0df;
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+@media (max-width: 800px) {
+  .automation-files {
+    grid-template-columns: 1fr;
+  }
 }

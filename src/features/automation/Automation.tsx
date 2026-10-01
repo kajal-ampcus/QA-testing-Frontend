@@ -1,0 +1,325 @@
+import { useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { Code2, Download, FolderTree } from "lucide-react";
+import { api } from "../../api/client";
+import { useAction } from "../../hooks/useAction";
+import {
+  Button,
+  Card,
+  EmptyState,
+  ErrorState,
+  ProgressIndicator,
+  StatusBadge,
+} from "../../components/ui";
+import type { AppMap, AutomationGeneration, Requirement, TestCase } from "../../types/api";
+
+function ineligibleReason(
+  test: TestCase,
+  requirement?: Requirement,
+  map?: AppMap | null,
+) {
+  if (test.status === "OUTDATED") {
+    return "Outdated. Revise the case and approve the new version.";
+  }
+  if (test.status !== "APPROVED") {
+    return `${test.status.replaceAll("_", " ")} cases cannot generate automation.`;
+  }
+  if (
+    requirement &&
+    test.requirement_id === requirement.id &&
+    test.requirement_version !== requirement.version
+  ) {
+    return "Stale: the requirement version changed after this case was approved.";
+  }
+  if (map && test.application_map_id !== map.id) {
+    return "This case uses a different application map.";
+  }
+  return null;
+}
+
+export default function Automation({
+  projectId,
+  tests,
+  map,
+  requirement,
+}: {
+  projectId: string;
+  tests: TestCase[];
+  map?: AppMap | null;
+  requirement?: Requirement;
+}) {
+  const rows = useMemo(
+    () =>
+      tests.map((test) => ({
+        test,
+        reason: ineligibleReason(test, requirement, map),
+      })),
+    [tests, requirement, map],
+  );
+  const eligible = rows.filter((row) => !row.reason);
+  const blockedHere = rows.filter((row) => row.reason);
+  const [selected, setSelected] = useState<string[]>(() =>
+    eligible.map((row) => row.test.id),
+  );
+  const [file, setFile] = useState<string>("");
+  const [openedId, setOpenedId] = useState<string | null>(null);
+  const generate = useAction(
+    projectId,
+    (ids: string[]) => api.generateAutomation(projectId, ids),
+    () => setOpenedId(null),
+  );
+  const history = useQuery({
+    queryKey: ["workspace", projectId, "automation"],
+    queryFn: ({ signal }) => api.automation(projectId, signal),
+  });
+  const opened = useQuery({
+    queryKey: ["workspace", projectId, "automation", openedId],
+    queryFn: ({ signal }) => api.automationGeneration(projectId, openedId || "", signal),
+    enabled: !!openedId && openedId !== generate.data?.generation_id,
+  });
+  const result = openedId ? opened.data : generate.data;
+  const preview = result?.sources.find((item) => item.path === file)?.content;
+  const toggle = (id: string) => {
+    setSelected((current) =>
+      current.includes(id) ? current.filter((item) => item !== id) : [...current, id],
+    );
+  };
+
+  return (
+    <div className="two-column">
+      <div className="stack">
+        <Card>
+          <div className="card-heading">
+            <div className="heading-icon">
+              <Code2 size={20} />
+            </div>
+            <div>
+              <h2>
+                Automation <span className="count">{eligible.length}</span>
+              </h2>
+              <p>Approved cases become a reviewed Playwright suite. Nothing is executed.</p>
+            </div>
+          </div>
+          {eligible.length === 0 ? (
+            <EmptyState
+              title="No approved cases yet"
+              description="Approve a test case on the previous step before generating automation."
+            />
+          ) : (
+            <ul className="automation-cases">
+              {eligible.map(({ test }) => (
+                <li key={test.id}>
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={selected.includes(test.id)}
+                      onChange={() => toggle(test.id)}
+                    />
+                    <span>
+                      <strong>
+                        {test.tc_code} · {test.current.title}
+                      </strong>
+                      <small>Version {test.current_version}</small>
+                    </span>
+                  </label>
+                  <StatusBadge status={test.status} />
+                </li>
+              ))}
+            </ul>
+          )}
+          {blockedHere.length > 0 && (
+            <div className="automation-blocked">
+              <h3>Not eligible</h3>
+              <ul>
+                {blockedHere.map(({ test, reason }) => (
+                  <li key={test.id}>
+                    <strong>{test.tc_code}</strong>
+                    <span>{reason}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          <div className="actions">
+            <Button
+              busy={generate.isPending}
+              disabled={!selected.length}
+              onClick={() => generate.mutate(selected)}
+            >
+              Generate Playwright suite
+            </Button>
+          </div>
+          {generate.isPending && (
+            <ProgressIndicator
+              label="Writing the suite"
+              description="Resolving observed locators and reviewing the TypeScript output."
+            />
+          )}
+          {generate.error && <ErrorState error={generate.error} />}
+          {opened.error && <ErrorState error={opened.error} />}
+        </Card>
+        {result && <Result result={result} projectId={projectId} file={file} preview={preview} onFile={setFile} />}
+      </div>
+      <aside>
+        <Card className="guide-card">
+          <div className="eyebrow">NOT EXECUTED</div>
+          <h3>Generated and reviewed — not executed</h3>
+          <p>
+            The suite is static TypeScript. Download it or open it in an editor.
+            Destructive flows stay skipped until RUN_DESTRUCTIVE is true.
+          </p>
+        </Card>
+        <Card>
+          <div className="card-heading">
+            <div>
+              <h2>Earlier suites</h2>
+            </div>
+          </div>
+          {(history.data?.generations.length ?? 0) === 0 ? (
+            <p className="muted">No suite has been generated for this project yet.</p>
+          ) : (
+            <ul className="automation-history">
+              {history.data?.generations.map((item) => (
+                <li key={item.generation_id}>
+                  <button type="button" onClick={() => setOpenedId(item.generation_id)}>
+                    <span>{item.review_status}</span>
+                    <small>
+                      {item.script_count} scripts · {item.verification_status}
+                    </small>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+      </aside>
+    </div>
+  );
+}
+
+function Result({
+  result,
+  projectId,
+  file,
+  preview,
+  onFile,
+}: {
+  result: AutomationGeneration;
+  projectId: string;
+  file: string;
+  preview?: string;
+  onFile: (path: string) => void;
+}) {
+  const [downloading, setDownloading] = useState(false);
+  const [downloadError, setDownloadError] = useState("");
+  return (
+    <Card>
+      <p className="automation-banner">{result.label}</p>
+      <div className="automation-status">
+        <StatusBadge status={result.review_status} />
+        <StatusBadge status={result.risk_level} />
+        <StatusBadge status={result.verification.status} />
+        {result.approval_required && <span className="muted">Tester approval required</span>}
+      </div>
+      <div className="actions">
+        <Button
+          variant="secondary"
+          busy={downloading}
+          onClick={() => {
+            setDownloadError("");
+            setDownloading(true);
+            void api
+              .downloadAutomation(projectId, result.generation_id)
+              .catch((error: unknown) => {
+                setDownloadError(error instanceof Error ? error.message : "Download failed.");
+              })
+              .finally(() => setDownloading(false));
+          }}
+        >
+          <Download size={15} />
+          Download ZIP
+        </Button>
+        {result.vscode_url && (
+          <a className="button secondary" href={result.vscode_url}>
+            Open in VS Code
+          </a>
+        )}
+        {result.cursor_url && (
+          <a className="button secondary" href={result.cursor_url}>
+            Open in Cursor
+          </a>
+        )}
+      </div>
+      {downloadError && <ErrorState error={new Error(downloadError)} />}
+      {result.blocked.length > 0 && (
+        <div className="automation-blocked">
+          <h3>Blocked during generation</h3>
+          <ul>
+            {result.blocked.map((item) => (
+              <li key={item.test_case_id}>
+                <strong>{item.test_case_code}</strong>
+                <span>{item.reason}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      <dl className="automation-counts">
+        <div>
+          <dt>Sleep</dt>
+          <dd>{result.lint.hardcoded_sleep}</dd>
+        </div>
+        <div>
+          <dt>XPath</dt>
+          <dd>{result.lint.xpath_fallback}</dd>
+        </div>
+        <div>
+          <dt>Secrets</dt>
+          <dd>{result.lint.literal_credentials}</dd>
+        </div>
+        <div>
+          <dt>test.only</dt>
+          <dd>{result.lint.test_only}</dd>
+        </div>
+        <div>
+          <dt>Missing await</dt>
+          <dd>{result.lint.missing_await}</dd>
+        </div>
+        <div>
+          <dt>Traceability</dt>
+          <dd>{result.lint.missing_traceability}</dd>
+        </div>
+        <div>
+          <dt>Blocked selectors</dt>
+          <dd>{result.lint.unsupported_blocked_selectors}</dd>
+        </div>
+        <div>
+          <dt>Destructive skip</dt>
+          <dd>{result.lint.destructive_not_skipped}</dd>
+        </div>
+      </dl>
+      <p className="muted">
+        Verification: {result.verification.status}. Type check {result.verification.tsc}. List{" "}
+        {result.verification.playwright_list}.
+        {result.verification.detail ? ` ${result.verification.detail}` : ""}
+      </p>
+      <div className="automation-files">
+        <div>
+          <h3>
+            <FolderTree size={14} /> Files
+          </h3>
+          <ul className="file-tree">
+            {result.file_tree.map((path) => (
+              <li key={path}>
+                <button type="button" onClick={() => onFile(path)} aria-current={file === path}>
+                  {path}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+        <pre className="source-preview">{preview || "Select a file to preview its source."}</pre>
+      </div>
+    </Card>
+  );
+}

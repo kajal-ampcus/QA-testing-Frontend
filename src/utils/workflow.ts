@@ -6,6 +6,7 @@ export const stages = [
   "Application map",
   "Test generation",
   "Test cases",
+  "Automation",
 ] as const;
 export function nextStage(
   requirement?: Requirement,
