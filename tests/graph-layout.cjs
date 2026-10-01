@@ -72,4 +72,69 @@ assert.equal('label' in normalized.edges[0], false);
 assert.equal('action' in normalized.edges[0], false);
 assert.deepEqual(normalized.nodes.find(node => node.id === 'login-entry').data.state.reached_via, ['click admin']);
 
+const spaMenuNoise = [
+  {
+    id: 'dash', state_code: 'STATE-010', fingerprint: 'fp-dash',
+    url_pattern: '/', reached_via: ['login'],
+    elements: [{ role: 'RootWebArea', name: 'Kitchen POS' }, { role: 'heading', name: 'Menu' }, { role: 'heading', name: 'Dashboard' }],
+  },
+  {
+    id: 'menu-a', state_code: 'STATE-011', fingerprint: 'fp-menu-a',
+    url_pattern: '/', reached_via: ['click Menu'],
+    elements: [{ role: 'RootWebArea', name: 'Menu | Kitchen POS' }, { role: 'heading', name: 'Menu' }],
+  },
+  {
+    id: 'menu-b', state_code: 'STATE-012', fingerprint: 'fp-menu-b',
+    url_pattern: '/', reached_via: ['click Menu again'],
+    elements: [{ role: 'RootWebArea', name: 'Menu | Categories' }, { role: 'heading', name: 'Menu' }, { role: 'button', name: 'Pizza' }],
+  },
+  {
+    id: 'orders', state_code: 'STATE-013', fingerprint: 'fp-orders',
+    url_pattern: '/', reached_via: ['click Orders'],
+    elements: [{ role: 'RootWebArea', name: 'Orders | Kitchen POS' }, { role: 'heading', name: 'Menu' }, { role: 'heading', name: 'Orders' }],
+  },
+];
+const collapsedSpa = layoutApplicationGraph(spaMenuNoise, [
+  { source_state_id: 'dash', target_state_id: 'menu-a' },
+  { source_state_id: 'dash', target_state_id: 'menu-b' },
+  { source_state_id: 'dash', target_state_id: 'orders' },
+], 176, 60);
+assert.equal(collapsedSpa.nodes.length, 3);
+const spaNames = collapsedSpa.nodes.map(node => loaded.exports.functionalStateName(node.data.state)).sort();
+assert.deepEqual(spaNames, ['Dashboard', 'Menu', 'Orders']);
+
+const catalogItems = [
+  {
+    id: 'menu', state_code: 'STATE-020', fingerprint: 'fp-menu',
+    url_pattern: '/menu', reached_via: ['click Menu'],
+    elements: [{ role: 'RootWebArea', name: 'Today\'s Menu' }, { role: 'heading', name: 'Today\'s Menu' }],
+  },
+  {
+    id: 'egg', state_code: 'STATE-021', fingerprint: 'fp-egg',
+    url_pattern: '/menu/boiled-egg', reached_via: ['click Boiled Egg'],
+    elements: [{ role: 'RootWebArea', name: 'Boiled Egg' }, { role: 'heading', name: 'Boiled Egg' }],
+  },
+  {
+    id: 'coffee', state_code: 'STATE-022', fingerprint: 'fp-coffee',
+    url_pattern: '/menu/coffee-sachet', reached_via: ['click Coffee Sachet'],
+    elements: [{ role: 'RootWebArea', name: 'Coffee Sachet' }, { role: 'heading', name: 'Coffee Sachet' }],
+  },
+  {
+    id: 'dash2', state_code: 'STATE-023', fingerprint: 'fp-dash2',
+    url_pattern: '/dashboard', reached_via: ['login'],
+    elements: [{ role: 'RootWebArea', name: 'Dashboard' }, { role: 'heading', name: 'Dashboard' }],
+  },
+];
+const catalogGraph = layoutApplicationGraph(catalogItems, [
+  { source_state_id: 'dash2', target_state_id: 'menu' },
+  { source_state_id: 'menu', target_state_id: 'egg' },
+  { source_state_id: 'menu', target_state_id: 'coffee' },
+], 176, 60);
+assert.equal(catalogGraph.nodes.length, 2);
+const catalogNames = catalogGraph.nodes.map(node => loaded.exports.functionalStateName(node.data.state)).sort();
+assert.deepEqual(catalogNames, ['Dashboard', 'Menu']);
+assert.equal(catalogGraph.edges.length, 1);
+assert.equal(catalogGraph.edges[0].source, 'dash2');
+assert.equal(catalogGraph.edges[0].target, 'menu');
+
 console.log('Graph layout checks passed: functional deduplication, edge remapping, label removal, hierarchy, cycles, and stable ordering.');

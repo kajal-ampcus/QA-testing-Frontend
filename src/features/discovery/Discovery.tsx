@@ -8,8 +8,6 @@ import type {
   Requirement,
   AppMap,
   Job,
-  DiscoveryModule,
-  DiscoveryAuthenticationFlow,
 } from "../../types/api";
 import {
   Button,
@@ -59,33 +57,8 @@ export default function Discovery({
     map?.discovery_checkpoint?.configuration.max_duration_seconds ?? 900,
   );
   const [workerLimit, setWorkerLimit] = useState(
-    map?.discovery_checkpoint?.configuration.worker_limit ?? 3,
+    map?.discovery_checkpoint?.configuration.worker_limit ?? 1,
   );
-  const [automaticLimits, setAutomaticLimits] = useState(true);
-  const [selectedDiscoveryMode, setSelectedDiscoveryMode] = useState<"targeted" | "full">(
-    map?.discovery_checkpoint?.configuration.mode === "full" ? "full" : "targeted",
-  );
-  const [selectedAreas, setSelectedAreas] = useState<string[]>(() => {
-    const saved = map?.coverage?.discovery_catalog as
-      | { selected_areas?: string[] }
-      | undefined;
-    return saved?.selected_areas ?? [];
-  });
-  const [selectedModules, setSelectedModules] = useState<string[]>(() => {
-    const saved = map?.coverage?.discovery_catalog as
-      | { selected_modules?: string[] }
-      | undefined;
-    return saved?.selected_modules ?? [];
-  });
-  const [selectedAuthFlows, setSelectedAuthFlows] = useState<string[]>(() => {
-    const saved = map?.coverage?.discovery_catalog as
-      | { selected_auth_flows?: string[]; selected_auth_flow?: string | null }
-      | undefined;
-    return (
-      saved?.selected_auth_flows ??
-      (saved?.selected_auth_flow ? [saved.selected_auth_flow] : [])
-    );
-  });
 
   /**
    * credential_ref of the account chosen for this run.
@@ -98,42 +71,6 @@ export default function Discovery({
 
   /** Whether any account has been saved (for the "Configured" badge) */
   const [savedBadge, setSavedBadge] = useState(!!project.credential_ref);
-  const catalog = map?.coverage?.discovery_catalog as
-    | {
-        mode?: string;
-        stage?: string;
-        modules?: DiscoveryModule[];
-        authentication_flows?: DiscoveryAuthenticationFlow[];
-        module_inventory_flows?: string[];
-        selected_auth_flows?: string[];
-        selected_auth_flow?: string | null;
-      }
-    | undefined;
-  const modules = catalog?.modules ?? [];
-  const authenticationFlows = catalog?.authentication_flows ?? [];
-  const selectedLoginFlow = authenticationFlows.find(
-    (flow) => selectedAuthFlows.includes(flow.id) && flow.kind === "login",
-  );
-  const selectedAuthFlow = selectedLoginFlow?.id ?? selectedAuthFlows[0] ?? null;
-  const chosenAuthFlow = authenticationFlows.find((flow) => flow.id === selectedAuthFlow);
-  const hasEntryInventory = authenticationFlows.length > 0;
-  const visibleModules = modules.filter(
-    (module) => !module.auth_flow_id || selectedAuthFlows.includes(module.auth_flow_id),
-  );
-  const hasModuleInventory = selectedAuthFlows.length === 1 && !!selectedAuthFlow && (
-    catalog?.module_inventory_flows?.includes(selectedAuthFlow) ?? false
-  );
-  const discoveryPhase = !hasEntryInventory
-    ? "entry_points" as const
-    : selectedAuthFlows.length > 1
-      ? selectedLoginFlow
-        ? "complete" as const
-        : "auth_flow" as const
-      : chosenAuthFlow?.kind === "login"
-        ? hasModuleInventory
-          ? "deep" as const
-          : "modules" as const
-        : "auth_flow" as const;
 
   useEffect(() => {
     const configuration = map?.discovery_checkpoint?.configuration;
@@ -142,8 +79,6 @@ export default function Discovery({
     setDepth(configuration.max_depth);
     setDuration(configuration.max_duration_seconds);
     setWorkerLimit(configuration.worker_limit);
-    setSelectedAreas(configuration.selected_areas ?? []);
-    setSelectedModules(configuration.selected_modules ?? []);
   }, [map?.id, map?.status, map?.discovery_checkpoint]);
   const discoveryBody = (resume: boolean, startFromScratch = false) => ({
     url,
@@ -152,17 +87,13 @@ export default function Discovery({
     max_depth: depth,
     max_duration_seconds: duration,
     worker_limit: workerLimit,
-    automatic_limits: resume ? false : automaticLimits,
+    automatic_limits: false,
     credential_ref: selectedRef ?? undefined,
-    discovery_mode: startFromScratch
-      ? "entry_points" as const
-      : selectedDiscoveryMode === "full"
-        ? "complete" as const
-        : discoveryPhase,
-    selected_auth_flow: startFromScratch ? null : selectedAuthFlow,
-    selected_auth_flows: startFromScratch ? [] : selectedAuthFlows,
-    selected_areas: startFromScratch ? [] : selectedAreas,
-    selected_modules: startFromScratch || selectedDiscoveryMode === "full" ? [] : selectedModules,
+    discovery_mode: "complete" as const,
+    selected_auth_flow: null,
+    selected_auth_flows: [],
+    selected_areas: [],
+    selected_modules: [],
     start_from_scratch: startFromScratch,
     ...(resume && map ? { resume_application_map_id: map.id } : {}),
   });
@@ -225,8 +156,11 @@ export default function Discovery({
             <Radar size={21} />
           </div>
           <div>
-            <h2>Meet your application</h2>
-            <p>Explore real pages, states, and interactive elements.</p>
+            <h2>Verify working screens</h2>
+            <p>
+              Sanity-check that login, dashboard, orders and other functions
+              work so we can generate test cases — not a DOM element inventory.
+            </p>
           </div>
           <StatusBadge
             status={
@@ -261,7 +195,7 @@ export default function Discovery({
               }
               description={
                 job?.status === "in_progress"
-                  ? "The browser is discovering application states. Observations appear as they are saved."
+                  ? "Crawling the whole application. Workers share one map of covered pages."
                   : "Discovery has been queued. This page updates automatically."
               }
             />
@@ -271,6 +205,7 @@ export default function Discovery({
               jobStatus={job?.status}
               stateCount={map?.states.length ?? 0}
               elementCount={map?.states.reduce((n, s) => n + s.elements.length, 0) ?? 0}
+              liveView={map?.discovery_checkpoint?.live_view}
             />
             <div className="actions">
               <Button
@@ -337,7 +272,7 @@ export default function Discovery({
               </p>
               <p>
                 {partial
-                  ? "You can generate tests from observed states and continue discovery later."
+                  ? "The graph already discovered is kept. Continue from where it stopped, or start from scratch."
                   : "Check the application access settings and credentials before retrying."}
               </p>
               <details>
@@ -397,7 +332,6 @@ export default function Discovery({
               </div>
             )}
 
-            {/* Approved requirement focus */}
             <div className="focus-requirement">
               <span className="badge good">
                 <i />
@@ -409,140 +343,55 @@ export default function Discovery({
               </span>
             </div>
 
-            <fieldset>
-              <legend>Discovery mode</legend>
-              <label><input type="radio" name="discovery-mode" checked={selectedDiscoveryMode === "targeted"} onChange={() => setSelectedDiscoveryMode("targeted")} />Targeted Discovery</label>
-              <p>Select dynamically discovered application paths.</p>
-              <label><input type="radio" name="discovery-mode" checked={selectedDiscoveryMode === "full"} onChange={() => setSelectedDiscoveryMode("full")} />Full Application Discovery</label>
-              <p>Discover the complete reachable application automatically using parallel workers.</p>
-            </fieldset>
-            {selectedDiscoveryMode === "targeted" && authenticationFlows.length > 0 && (
-              <section className="discovery-scope" aria-labelledby="discovery-scope-title">
-                <h3 id="discovery-scope-title">Choose authentication flows</h3>
-                <p className="field-hint">
-                  These entry points were observed from the application. Select one or more flows to include.
-                </p>
-                {selectedAuthFlows.length > 1 && (
-                  <p className="field-hint">
-                    {selectedLoginFlow
-                      ? "Selected entry pages and authenticated modules will be crawled."
-                      : "Selected entry pages will be crawled. Select a login flow to include authenticated modules."}
-                  </p>
-                )}
-                <div className="authentication-flow-options" aria-labelledby="discovery-scope-title">
-                  {authenticationFlows.map((flow) => (
-                    <label
-                      key={flow.id}
-                      className={`authentication-flow-option${selectedAuthFlows.includes(flow.id) ? " is-selected" : ""}`}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={selectedAuthFlows.includes(flow.id)}
-                        onChange={(event) => {
-                          setSelectedAuthFlows((current) =>
-                            event.target.checked
-                              ? [...current, flow.id]
-                              : current.filter((id) => id !== flow.id),
-                          );
-                          setSelectedModules([]);
-                        }}
-                      />
-                      <span className="authentication-flow-copy">
-                        <strong>{flow.label}</strong>
-                        <span className="field-hint">{human(flow.kind)}</span>
-                      </span>
-                    </label>
-                  ))}
-                </div>
-                {selectedAuthFlows.length === 1 && chosenAuthFlow?.kind === "login" && hasModuleInventory && (
-                  <fieldset>
-                    <legend>Choose functional areas</legend>
-                    <p className="field-hint">
-                      These modules were discovered from the authenticated landing page and navigation.
-                    </p>
-                    {visibleModules.length === 0 && (
-                      <p className="field-hint">No separate navigation modules were observed for this flow.</p>
-                    )}
-                    {visibleModules.map((module) => (
-                      <label key={module.id}>
-                        <input
-                          type="checkbox"
-                          checked={selectedModules.includes(module.id)}
-                          onChange={(event) => setSelectedModules((current) =>
-                            event.target.checked
-                              ? [...current, module.id]
-                              : current.filter((id) => id !== module.id),
-                          )}
-                        />
-                        {module.label}
-                      </label>
-                    ))}
-                  </fieldset>
-                )}
-              </section>
-            )}
-
-            {/* Crawl limits */}
-            <details>
-              <summary>Discovery settings</summary>
+            <div className="form-grid three">
               <label>
-                <input
-                  type="checkbox"
-                  checked={automaticLimits}
-                  onChange={(e) => setAutomaticLimits(e.target.checked)}
-                />
-                Automatic discovery (recommended)
-              </label>
-              <p className="field-hint">
-                Continues until no new unique pages or actions remain. Internal
-                circuit breakers and Stop discovery still protect the worker.
-              </p>
-              {(!automaticLimits || resumable) && (
-              <div className="form-grid three">
-                <label>
-                  Maximum pages
-                  <input
-                    type="number"
-                    min={1}
-                    required
-                    value={pages}
-                    onChange={(e) => setPages(+e.target.value)}
-                  />
-                </label>
-                <label>
-                  Maximum depth
-                  <input
-                    type="number"
-                    min={0}
-                    required
-                    value={depth}
-                    onChange={(e) => setDepth(+e.target.value)}
-                  />
-                </label>
-                <label>
-                  Time limit (seconds)
-                  <input
-                    type="number"
-                    min={1}
-                    required
-                    value={duration}
-                    onChange={(e) => setDuration(+e.target.value)}
-                  />
-                </label>
-              </div>
-              )}
-              <label>
-                Parallel browser workers
+                Maximum pages
                 <input
                   type="number"
                   min={1}
-                  max={5}
                   required
-                  value={workerLimit}
-                  onChange={(e) => setWorkerLimit(+e.target.value)}
+                  value={pages}
+                  onChange={(e) => setPages(+e.target.value)}
                 />
               </label>
-            </details>
+              <label>
+                Maximum depth
+                <input
+                  type="number"
+                  min={0}
+                  required
+                  value={depth}
+                  onChange={(e) => setDepth(+e.target.value)}
+                />
+              </label>
+              <label>
+                Time limit (seconds)
+                <input
+                  type="number"
+                  min={1}
+                  required
+                  value={duration}
+                  onChange={(e) => setDuration(+e.target.value)}
+                />
+              </label>
+            </div>
+            <label>
+              Parallel browser workers
+              <input
+                type="number"
+                min={1}
+                max={5}
+                required
+                value={workerLimit}
+                onChange={(e) => setWorkerLimit(+e.target.value)}
+              />
+            </label>
+            <p className="field-hint">
+              Discovery crawls the whole application. Workers share one map of
+              covered pages, so they do not recrawl the same screen. If time or
+              page limits stop the run, the graph is kept. Continue resumes from
+              that point; Start from scratch begins a new map.
+            </p>
 
             {(discover.error || continueDiscovery.error) && (
               <ErrorState error={discover.error || continueDiscovery.error} />
@@ -563,16 +412,9 @@ export default function Discovery({
               <Button
                 type="submit"
                 busy={discover.isPending}
-                disabled={
-                  !!jobError ||
-                  (!resumable && authenticationFlows.length > 0 && selectedAuthFlows.length === 0) ||
-                  (selectedDiscoveryMode === "targeted" && !resumable && authenticationFlows.length > 0 && selectedAuthFlows.length === 0) ||
-                  (selectedDiscoveryMode === "targeted" && !resumable && discoveryPhase === "modules" && !selectedRef) ||
-                  (selectedDiscoveryMode === "targeted" && !resumable && discoveryPhase === "complete" && !!selectedLoginFlow && !selectedRef) ||
-                  (selectedDiscoveryMode === "targeted" && !resumable && discoveryPhase === "deep" && selectedModules.length === 0)
-                }
+                disabled={!!jobError}
               >
-                {failed || partial ? (
+                {resumable || failed || partial ? (
                   <RefreshCw size={16} />
                 ) : (
                   <Radar size={16} />
@@ -581,18 +423,6 @@ export default function Discovery({
                   ? "Start from Scratch"
                   : failed || partial
                     ? "Retry discovery"
-                  : hasEntryInventory
-                    ? selectedDiscoveryMode === "full"
-                      ? "Discover full application"
-                      : discoveryPhase === "entry_points"
-                      ? "Start discovery"
-                      : discoveryPhase === "modules"
-                        ? "Discover application modules"
-                        : discoveryPhase === "deep"
-                          ? catalog?.stage === "deep"
-                            ? "Discover More"
-                            : "Discover selected modules"
-                          : "Discover selected flow"
                     : "Start discovery"}
               </Button>
               {map && !running && (

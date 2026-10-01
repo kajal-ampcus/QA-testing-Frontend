@@ -9,6 +9,7 @@ import {
   Plus,
 } from "lucide-react";
 import type {
+  Approval,
   Requirement,
   AppMap,
   TestCase,
@@ -255,16 +256,6 @@ export function Generate({
   ) => void;
   onReview: () => void;
 }) {
-  const [selectedAreaIds, setSelectedAreaIds] = useState<string[]>([]);
-  const [selectedModuleIds, setSelectedModuleIds] = useState<string[]>([]);
-  const catalog = map.coverage?.discovery_catalog as
-    | {
-        areas?: { id: string; label: string }[];
-        modules?: { id: string; label: string; area_id: string }[];
-      }
-    | undefined;
-  const selectableAreas = catalog?.areas ?? [];
-  const selectableModules = catalog?.modules ?? [];
   const generatedFingerprints = new Set(
     map.project_test_generation_coverage?.[r.id] ?? [],
   );
@@ -333,52 +324,9 @@ export function Generate({
           />
         )}
         {!!error && <ErrorState error={error} />}
-        {selectableAreas.length > 0 && (
-          <fieldset>
-            <legend>Generate for selected areas (optional)</legend>
-            <p className="field-hint">Leave everything clear to use the whole combined graph.</p>
-            {selectableAreas.map((area) => (
-              <label key={area.id}>
-                <input
-                  type="checkbox"
-                  checked={selectedAreaIds.includes(area.id)}
-                  onChange={(event) =>
-                    setSelectedAreaIds((current) =>
-                      event.target.checked
-                        ? [...current, area.id]
-                        : current.filter((id) => id !== area.id),
-                    )
-                  }
-                />
-                {area.label}
-              </label>
-            ))}
-            {selectableModules.length > 0 && (
-              <div>
-                <span>Dashboard modules</span>
-                {selectableModules.map((module) => (
-                  <label key={module.id}>
-                    <input
-                      type="checkbox"
-                      checked={selectedModuleIds.includes(module.id)}
-                      onChange={(event) =>
-                        setSelectedModuleIds((current) =>
-                          event.target.checked
-                            ? [...current, module.id]
-                            : current.filter((id) => id !== module.id),
-                        )
-                      }
-                    />
-                    {module.label}
-                  </label>
-                ))}
-              </div>
-            )}
-          </fieldset>
-        )}
         <div className="actions">
           <Button
-            onClick={() => onGenerate("all", selectedAreaIds, selectedModuleIds)}
+            onClick={() => onGenerate("all", [], [])}
             busy={pending}
           >
             <Sparkles size={16} />
@@ -387,9 +335,7 @@ export function Generate({
           {hasPreviousGeneration && ungeneratedStates.length > 0 && (
             <Button
               variant="secondary"
-              onClick={() =>
-                onGenerate("ungenerated", selectedAreaIds, selectedModuleIds)
-              }
+              onClick={() => onGenerate("ungenerated", [], [])}
               busy={pending}
             >
               Generate only for new graph part ({ungeneratedStates.length})
@@ -441,6 +387,8 @@ export default function TestCases({
   completingCoverage,
   coverageError,
   onCompleteCoverage,
+  approvals = [],
+  requirement,
 }: {
   projectId: string;
   tests: TestCase[];
@@ -450,6 +398,8 @@ export default function TestCases({
   completingCoverage?: boolean;
   coverageError?: unknown;
   onCompleteCoverage?: () => void;
+  approvals?: Approval[];
+  requirement?: Requirement;
 }) {
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("");
@@ -460,6 +410,56 @@ export default function TestCases({
   const [creating, setCreating] = useState(false);
   const [exportingExcel, setExportingExcel] = useState(false);
   const [exportError, setExportError] = useState("");
+  const [reviewer, setReviewer] = useState("");
+  const [reason, setReason] = useState("");
+  const [draftTitle, setDraftTitle] = useState("");
+  const [draftObjective, setDraftObjective] = useState("");
+  const [draftExpected, setDraftExpected] = useState("");
+  const [draftNotes, setDraftNotes] = useState("");
+  const [draftTrace, setDraftTrace] = useState("");
+  const submit = useAction(
+    projectId,
+    (testCase: TestCase) => api.submitTest(testCase.id, testCase.current_version),
+    (updated) => setSelected(updated),
+  );
+  const remove = useAction(
+    projectId,
+    (testCase: TestCase) => api.deleteTest(testCase.id),
+    () => setSelected(undefined),
+  );
+  const decide = useAction(
+    projectId,
+    (input: { approvalId: string; action: "approve" | "reject" }) =>
+      api.decide(input.approvalId, input.action, reviewer.trim(), reason.trim()),
+    () => setSelected(undefined),
+  );
+  const createDraft = useAction(
+    projectId,
+    () =>
+      api.createTest(projectId, {
+        requirement_id: requirement!.id,
+        application_map_id: map?.id,
+        title: draftTitle.trim(),
+        objective: draftObjective.trim(),
+        expected_result: draftExpected.trim(),
+        category: "EDGE_CASE",
+        traceability: draftTrace
+          .split(/[\s,]+/)
+          .map((id) => id.trim())
+          .filter(Boolean),
+        step_notes: draftNotes
+          .split("\n")
+          .map((line) => line.trim())
+          .filter(Boolean),
+      }),
+    () => {
+      setDraftTitle("");
+      setDraftObjective("");
+      setDraftExpected("");
+      setDraftNotes("");
+      setDraftTrace("");
+    },
+  );
   const filtered = tests.filter(
     (t) =>
       `${t.tc_code} ${t.current.title} ${t.current.traceability.join(" ")}`
@@ -549,7 +549,8 @@ export default function TestCases({
         {result &&
           (result.uncovered_acs.length > 0 ||
             result.partial_pairing_acs.length > 0 ||
-            result.needs_review_test_cases.length > 0) && (
+            result.needs_review_test_cases.length > 0 ||
+            !!result.duplicates_skipped) && (
             <div className="notice">
               <strong>Generation needs review</strong>
               {result.uncovered_acs.length > 0 && (
@@ -569,6 +570,9 @@ export default function TestCases({
                   Flagged tests: {result.needs_review_test_cases.join(", ")}
                 </p>
               )}
+              {!!result.duplicates_skipped && (
+                <p>{result.duplicates_skipped} duplicate draft(s) were skipped.</p>
+              )}
               {(result.uncovered_acs.length > 0 ||
                 result.partial_pairing_acs.length > 0) &&
                 onCompleteCoverage && (
@@ -579,6 +583,61 @@ export default function TestCases({
                 )}
             </div>
           )}
+        {requirement && map && (
+          <details className="notice">
+            <summary>Add a tester-authored edge case</summary>
+            <div className="form-grid">
+              <label>
+                Title
+                <input value={draftTitle} onChange={(e) => setDraftTitle(e.target.value)} />
+              </label>
+              <label>
+                Objective
+                <input
+                  value={draftObjective}
+                  onChange={(e) => setDraftObjective(e.target.value)}
+                />
+              </label>
+              <label>
+                Expected result
+                <input
+                  value={draftExpected}
+                  onChange={(e) => setDraftExpected(e.target.value)}
+                />
+              </label>
+              <label>
+                Acceptance criteria ids
+                <input
+                  value={draftTrace}
+                  onChange={(e) => setDraftTrace(e.target.value)}
+                  placeholder="AC-1 AC-2"
+                />
+              </label>
+            </div>
+            <label>
+              Step notes
+              <textarea
+                rows={2}
+                value={draftNotes}
+                onChange={(e) => setDraftNotes(e.target.value)}
+              />
+            </label>
+            {createDraft.error && <ErrorState error={createDraft.error} />}
+            <Button
+              type="button"
+              busy={createDraft.isPending}
+              disabled={
+                !draftTitle.trim() ||
+                !draftObjective.trim() ||
+                !draftExpected.trim() ||
+                !draftTrace.trim()
+              }
+              onClick={() => createDraft.mutate()}
+            >
+              Save draft
+            </Button>
+          </details>
+        )}
         <div className="table-toolbar">
           <label className="search">
             <Search size={16} />
@@ -850,6 +909,92 @@ export default function TestCases({
             <summary>Test data</summary>
             <pre>{JSON.stringify(selected.current.test_data, null, 2)}</pre>
           </details>
+          <div className="form-grid">
+            <label>
+              Reviewer name
+              <input
+                value={reviewer}
+                onChange={(e) => setReviewer(e.target.value)}
+                placeholder="Your name"
+              />
+            </label>
+            <label>
+              Review note
+              <input
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+                placeholder="Required when requesting a revision"
+              />
+            </label>
+          </div>
+          {(submit.error || remove.error || decide.error) && (
+            <ErrorState error={submit.error || remove.error || decide.error} />
+          )}
+          <div className="actions">
+            {(selected.status === "DRAFT" || selected.status === "REJECTED") && (
+              <Button
+                type="button"
+                busy={submit.isPending}
+                onClick={() => submit.mutate(selected)}
+              >
+                Submit for approval
+              </Button>
+            )}
+            {selected.status === "PENDING_APPROVAL" &&
+              approvals.find(
+                (approval) =>
+                  approval.target_type === "test_case" &&
+                  approval.target_id === selected.id,
+              ) && (
+                <>
+                  <Button
+                    variant="secondary"
+                    type="button"
+                    disabled={!reviewer.trim() || !reason.trim()}
+                    busy={decide.isPending}
+                    onClick={() =>
+                      decide.mutate({
+                        approvalId: approvals.find(
+                          (approval) =>
+                            approval.target_type === "test_case" &&
+                            approval.target_id === selected.id,
+                        )!.id,
+                        action: "reject",
+                      })
+                    }
+                  >
+                    Request revision
+                  </Button>
+                  <Button
+                    type="button"
+                    disabled={!reviewer.trim()}
+                    busy={decide.isPending}
+                    onClick={() =>
+                      decide.mutate({
+                        approvalId: approvals.find(
+                          (approval) =>
+                            approval.target_type === "test_case" &&
+                            approval.target_id === selected.id,
+                        )!.id,
+                        action: "approve",
+                      })
+                    }
+                  >
+                    Approve test case
+                  </Button>
+                </>
+              )}
+            {selected.status !== "APPROVED" && (
+              <Button
+                variant="secondary"
+                type="button"
+                busy={remove.isPending}
+                onClick={() => remove.mutate(selected)}
+              >
+                Delete draft
+              </Button>
+            )}
+          </div>
         </DetailDrawer>
       )}
     </>

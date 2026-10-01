@@ -1,13 +1,9 @@
 /**
  * LiveDiscoveryGraph — shown during an active discovery run.
  *
- * Each application state discovered by the crawler appears as a node the
- * moment it is persisted to the database. Edges come from the existing
- * application graph transitions. Nodes slide in
- * with an entrance animation and a short pulse so the user can see the map
- * growing in real-time.
- *
- * Layout: shared top-to-bottom Dagre hierarchy, derived from transitions.
+ * Left: functional screens as they are verified.
+ * Right: the latest Chrome DevTools MCP screenshot so you can see where
+ * the crawl is going while the graph grows. Playwright is not used here.
  */
 
 import { useMemo, useEffect, useRef, useState } from "react";
@@ -30,42 +26,34 @@ import {
 } from "../application-map/graphLayout";
 import { Globe, Wifi, Maximize2, Minimize2 } from "lucide-react";
 import "@xyflow/react/dist/style.css";
-import type { AppState } from "../../types/api";
-
-// ---------------------------------------------------------------------------
-// Custom node
-// ---------------------------------------------------------------------------
+import type { AppState, DiscoveryCheckpoint } from "../../types/api";
 
 function LiveStateNode({
   data,
-}: NodeProps<Node<{ state: AppState; isNew: boolean; isEntry: boolean }>>) {
-  const s = data.state;
-  const label = functionalStateName(s);
-  const isEntry = data.isEntry;
+}: NodeProps<
+  Node<{ state: AppState; isNew: boolean; isEntry: boolean; isCurrent: boolean }>
+>) {
+  const label = functionalStateName(data.state);
 
   return (
     <div
-      className={`live-node ${isEntry ? "live-node--entry" : ""} ${data.isNew ? "live-node--new" : ""}`}
+      className={`live-node ${data.isEntry ? "live-node--entry" : ""} ${
+        data.isNew ? "live-node--new" : ""
+      } ${data.isCurrent ? "live-node--current" : ""}`}
     >
       <Handle type="target" position={Position.Top} />
-
       <div className="live-node-content">
         <span className="live-node-icon">
           <Globe size={13} />
         </span>
         <div className="live-node-title">{label}</div>
       </div>
-
       <Handle type="source" position={Position.Bottom} />
     </div>
   );
 }
 
 const nodeTypes = { live: LiveStateNode };
-
-// ---------------------------------------------------------------------------
-// Empty state shown while waiting for the first state
-// ---------------------------------------------------------------------------
 
 function ScanningPlaceholder({ phase }: { phase: string }) {
   return (
@@ -78,34 +66,83 @@ function ScanningPlaceholder({ phase }: { phase: string }) {
       </div>
       <p className="live-graph-scanning-label">
         {phase === "in_progress"
-          ? "Browser is crawling your application…"
+          ? "Chrome DevTools is visiting working screens…"
           : "Discovery worker is starting up…"}
       </p>
       <p className="live-graph-scanning-sub">
-        Nodes will appear here as states are discovered
+        Functional screens appear here as they are verified
       </p>
     </div>
   );
 }
 
-// ---------------------------------------------------------------------------
-// Main component
-// ---------------------------------------------------------------------------
+function LiveBrowserPane({
+  liveView,
+  jobStatus,
+}: {
+  liveView?: DiscoveryCheckpoint["live_view"];
+  jobStatus?: string;
+}) {
+  const screenshot = liveView?.screenshot_ref;
+  return (
+    <div className="live-browser" aria-label="Live Chrome DevTools crawl">
+      <div className="live-browser-chrome">
+        <span className="live-browser-dot" />
+        <span className="live-browser-dot live-browser-dot--amber" />
+        <span className="live-browser-dot live-browser-dot--green" />
+        <span className="live-browser-tool">Chrome DevTools</span>
+        <div className="live-browser-url" title={liveView?.url || ""}>
+          {liveView?.url || "Waiting for Chrome DevTools…"}
+        </div>
+      </div>
+      <div className="live-browser-stage">
+        {screenshot ? (
+          <img
+            key={screenshot}
+            src={screenshot}
+            alt={liveView?.label ? `Chrome DevTools visiting ${liveView.label}` : "Live Chrome DevTools crawl"}
+            className="live-browser-frame"
+          />
+        ) : (
+          <div className="live-browser-empty">
+            <p>
+              {jobStatus === "in_progress"
+                ? "Chrome DevTools is opening the application…"
+                : "The live crawl view appears once Chrome DevTools starts"}
+            </p>
+          </div>
+        )}
+      </div>
+      <div className="live-browser-status">
+        {liveView?.label ? (
+          <>
+            Now visiting <strong>{liveView.label}</strong>
+            {liveView.action && liveView.action !== "ROOT" ? (
+              <span className="live-browser-action">{liveView.action}</span>
+            ) : null}
+          </>
+        ) : (
+          "Watch the graph build as each working screen is confirmed"
+        )}
+      </div>
+    </div>
+  );
+}
 
 export default function LiveDiscoveryGraph({
   states,
   jobStatus,
   elementCount,
   flowGraph,
+  liveView,
 }: {
   states: AppState[];
   jobStatus?: string;
   stateCount: number;
   elementCount: number;
   flowGraph?: ApplicationGraphData;
+  liveView?: DiscoveryCheckpoint["live_view"];
 }) {
-  // Track which state_codes are "newly arrived" for the pop-in animation.
-  // After 1.2 s we remove them from the set so the animation doesn't replay.
   const knownCodes = useRef<Set<string>>(new Set());
   const [newCodes, setNewCodes] = useState<Set<string>>(new Set());
 
@@ -130,12 +167,6 @@ export default function LiveDiscoveryGraph({
     return () => clearTimeout(timer);
   }, [states]);
 
-  // ------------------------------------------------------------
-  // FULLSCREEN
-  // Same pattern as ApplicationMap: real Fullscreen API on the canvas
-  // element itself, kept in sync via the fullscreenchange event (also
-  // covers the user pressing Esc), with a re-fit once the resize lands.
-  // ------------------------------------------------------------
   const canvasRef = useRef<HTMLDivElement>(null);
   const rfInstance = useRef<ReactFlowInstance<any, any> | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -167,33 +198,42 @@ export default function LiveDiscoveryGraph({
     [states, flowGraph],
   );
 
+  const currentFingerprint = liveView?.fingerprint;
   const nodes = graph.nodes.map((n) => ({
     ...n,
     type: "live",
-    data: { ...n.data, isNew: newCodes.has(n.data.state.state_code) },
+    data: {
+      ...n.data,
+      isNew: newCodes.has(n.data.state.state_code),
+      isCurrent:
+        !!currentFingerprint &&
+        (n.data.state.fingerprint === currentFingerprint ||
+          n.id === currentFingerprint),
+    },
   }));
 
   const edges = graph.edges.map((e) => ({
     ...e,
     type: "smoothstep",
+    className: "app-flow-edge",
+    zIndex: 4,
     animated: true,
-    markerEnd: { type: MarkerType.ArrowClosed, color: "#3db882" },
-    style: { stroke: "#3db882", strokeWidth: 1.8, opacity: 0.75 },
+    markerEnd: { type: MarkerType.ArrowClosed, color: "#1f7a55", width: 18, height: 18 },
+    style: { stroke: "#1f7a55", strokeWidth: 2.4 },
   }));
 
   return (
     <div className="live-graph-wrap">
-      {/* Header strip */}
       <div className="live-graph-header">
         <span className="live-graph-pulse-dot" />
-        <span className="live-graph-header-label">Live discovery</span>
+        <span className="live-graph-header-label">Discovery run</span>
         <div className="live-graph-stats">
           <span>
-            <strong>{graph.nodes.length}</strong> functional states
+            <strong>{graph.nodes.length}</strong> working screens
           </span>
           <span className="live-graph-sep" />
           <span>
-            <strong>{elementCount}</strong> elements
+            <strong>{elementCount}</strong> observed controls
           </span>
           {jobStatus === "in_progress" && (
             <>
@@ -204,50 +244,58 @@ export default function LiveDiscoveryGraph({
         </div>
       </div>
 
-      {/* Graph canvas */}
-      <div ref={canvasRef} className="live-graph-canvas">
-        {states.length === 0 ? (
-          <ScanningPlaceholder phase={jobStatus ?? ""} />
-        ) : (
-          <>
-            <ReactFlow
-              nodes={nodes}
-              edges={edges}
-              nodeTypes={nodeTypes}
-              fitView
-              fitViewOptions={{ padding: 0.25, maxZoom: 1.1 }}
-              nodesDraggable={false}
-              nodesConnectable={false}
-              onInit={(instance) => (rfInstance.current = instance)}
-              minZoom={0.1}
-              maxZoom={2}
-            >
-              <Background color="#c8d9d0" gap={20} size={1} />
-              <Controls showInteractive={false} />
-              <MiniMap pannable zoomable />
-            </ReactFlow>
-
-            <button
-              type="button"
-              className="graph-fullscreen-btn"
-              onClick={toggleFullscreen}
-              title={isFullscreen ? "Exit fullscreen" : "Fullscreen"}
-              aria-label={isFullscreen ? "Exit fullscreen" : "Fullscreen"}
-            >
-              {isFullscreen ? (
-                <Minimize2 size={17} />
-              ) : (
-                <Maximize2 size={17} />
-              )}
-            </button>
-          </>
-        )}
+      <div className="live-discovery-stack">
+        <section className="live-crawl-section" aria-label="Live Chrome DevTools crawl">
+          <div className="live-section-heading">Live Chrome DevTools crawl</div>
+          <LiveBrowserPane liveView={liveView} jobStatus={jobStatus} />
+        </section>
+        <section className="live-graph-section" aria-label="Application graph">
+          <div className="live-section-heading">Application graph</div>
+          <div ref={canvasRef} className="live-graph-canvas">
+            {states.length === 0 ? (
+              <ScanningPlaceholder phase={jobStatus ?? ""} />
+            ) : (
+              <>
+                <ReactFlow
+                  nodes={nodes}
+                  edges={edges}
+                  nodeTypes={nodeTypes}
+                  defaultEdgeOptions={{
+                    type: "smoothstep",
+                    zIndex: 4,
+                    style: { stroke: "#1f7a55", strokeWidth: 2.4 },
+                  }}
+                  fitView
+                  fitViewOptions={{ padding: 0.25, maxZoom: 1.1 }}
+                  nodesDraggable={false}
+                  nodesConnectable={false}
+                  edgesFocusable={false}
+                  onInit={(instance) => (rfInstance.current = instance)}
+                  minZoom={0.1}
+                  maxZoom={2}
+                >
+                  <Background color="#c8d9d0" gap={20} size={1} />
+                  <Controls showInteractive={false} />
+                  <MiniMap pannable zoomable />
+                </ReactFlow>
+                <button
+                  type="button"
+                  className="graph-fullscreen-btn"
+                  onClick={toggleFullscreen}
+                  title={isFullscreen ? "Exit fullscreen" : "Fullscreen"}
+                  aria-label={isFullscreen ? "Exit fullscreen" : "Fullscreen"}
+                >
+                  {isFullscreen ? <Minimize2 size={17} /> : <Maximize2 size={17} />}
+                </button>
+              </>
+            )}
+          </div>
+        </section>
       </div>
 
-      {/* Phase legend */}
       <div className="live-graph-legend">
-        <span className="live-graph-legend-entry">Entry state</span>
-        <span>→ Authenticated states grow as the crawler explores</span>
+        <span className="live-graph-legend-entry">Entry screen</span>
+        <span>Pages are nodes. Items on a page stay on that page.</span>
       </div>
     </div>
   );

@@ -46,6 +46,7 @@ export interface Approval {
   id: string;
   target_type: string;
   target_id: string;
+  target_version?: number | null;
   status: string;
   decided_by: string | null;
   decided_at: string | null;
@@ -81,6 +82,13 @@ export interface AppMap {
 
 export interface DiscoveryCheckpoint {
   progress?: Record<string, string | number>;
+  live_view?: {
+    url?: string;
+    label?: string;
+    screenshot_ref?: string | null;
+    fingerprint?: string | null;
+    action?: string;
+  } | null;
   version: number;
   configuration: {
     mode: "entry_points" | "auth_flow" | "modules" | "inventory" | "deep" | "complete" | "targeted" | "full";
@@ -199,5 +207,7 @@ export interface Generation {
   test_cases: TestCase[];
   uncovered_acs: string[];
   partial_pairing_acs: string[];
+  pairing_gaps?: { ac_id: string; missing: string[] }[];
   needs_review_test_cases: string[];
+  duplicates_skipped?: number;
 }

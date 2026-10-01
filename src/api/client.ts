@@ -24,12 +24,15 @@ async function request<T>(
   signal?: AbortSignal,
   method?: "GET" | "POST" | "DELETE",
 ): Promise<T> {
+  const headers: Record<string, string> = {};
+  if (body !== undefined) headers["Content-Type"] = "application/json";
+  const apiKey = import.meta.env.VITE_API_KEY;
+  if (apiKey) headers["X-API-Key"] = apiKey;
   const response = await fetch(
     `${(import.meta.env.VITE_API_BASE_URL || "/api/v1").replace(/\/$/, "")}${path}`,
     {
       method: method ?? (body === undefined ? "GET" : "POST"),
-      headers:
-        body === undefined ? undefined : { "Content-Type": "application/json" },
+      headers: Object.keys(headers).length ? headers : undefined,
       body: body === undefined ? undefined : JSON.stringify(body),
       signal,
     },
@@ -135,7 +138,7 @@ export const api = {
       max_duration_seconds: number;
       worker_limit?: number;
       automatic_limits?: boolean;
-      discovery_mode?: "entry_points" | "auth_flow" | "modules" | "inventory" | "deep" | "complete";
+      discovery_mode?: "entry_points" | "auth_flow" | "modules" | "inventory" | "deep" | "complete" | "full";
       selected_auth_flow?: string | null;
       selected_auth_flows?: string[];
       selected_areas?: string[];
@@ -258,18 +261,13 @@ export const api = {
       {},
     ),
 
-  /**
-   * Soft-delete an account by revising it with active=false.
-   * Backend marks old row inactive via the revisions endpoint with a
-   * sentinel payload — for now we keep the row but the UI hides it.
-   * If the backend gains a DELETE route, swap this out.
-   */
-  deleteAccount: async (projectId: string, credential_ref: string) => {
-    // There is no DELETE endpoint yet — throw a clear error
-    throw new Error(
-      `Deleting account ${credential_ref} is not yet supported by the backend.`,
-    );
-  },
+  deleteAccount: (projectId: string, credential_ref: string) =>
+    request<void>(
+      `/projects/${projectId}/credentials/${encodeURIComponent(credential_ref)}`,
+      undefined,
+      undefined,
+      "DELETE",
+    ),
 
   // ── Test cases ────────────────────────────────────────────
   tests: (id: string, signal?: AbortSignal) =>
@@ -293,7 +291,7 @@ export const api = {
       selected_module_ids,
     }),
 
-  createTestCase: (
+  createTest: (
     projectId: string,
     body: {
       requirement_id: string;
@@ -301,11 +299,17 @@ export const api = {
       title: string;
       objective: string;
       expected_result: string;
-      category?: "POSITIVE" | "NEGATIVE" | "EDGE_CASE";
+      category: "POSITIVE" | "NEGATIVE" | "EDGE_CASE";
       traceability: string[];
       preconditions?: string[];
       step_notes?: string[];
       start_state_code?: string;
     },
   ) => request<TestCase>(`/test-cases/projects/${projectId}`, body),
+
+  submitTest: (testCaseId: string, expected_version: number) =>
+    request<TestCase>(`/test-cases/${testCaseId}/submit`, { expected_version }),
+
+  deleteTest: (testCaseId: string) =>
+    request<void>(`/test-cases/${testCaseId}`, undefined, undefined, "DELETE"),
 };

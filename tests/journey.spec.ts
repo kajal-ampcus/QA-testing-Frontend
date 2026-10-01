@@ -323,7 +323,9 @@ async function fixture(
         expect(body.resume_application_map_id).toBe("m1");
         expect(body.max_pages).toBe(30);
       } else if (!options.resumable) {
-        expect(["targeted", "full"]).toContain(body.discovery_mode);
+        expect(body.discovery_mode).toBe("complete");
+        expect(body.selected_modules).toEqual([]);
+        expect(body.selected_auth_flows).toEqual([]);
       }
       state.polls = 0;
       result = { job_id: "job-1" };
@@ -425,7 +427,7 @@ test("complete journey: create, clarify, approve, discover, map, generate, inspe
     .click();
   await page.getByRole("button", { name: "Confirm approval" }).click();
   await expect(
-    page.getByRole("heading", { name: "Meet your application" }),
+    page.getByRole("heading", { name: "Verify working screens" }),
   ).toBeVisible();
   await page.getByRole("button", { name: "Add test account" }).click();
   await page.getByLabel("Username", { exact: true }).fill("qa@example.test");
@@ -437,7 +439,7 @@ test("complete journey: create, clarify, approve, discover, map, generate, inspe
     page.getByText("Credentials configured", { exact: true }),
   ).toBeVisible();
   await page
-    .getByRole("button", { name: "Discover application paths", exact: true })
+    .getByRole("button", { name: "Start discovery", exact: true })
     .click();
   await expect(
     page.getByRole("heading", { name: "Exploring your application" }),
@@ -552,7 +554,7 @@ test("failed worker result is actionable and retries discovery", async ({
   });
   await page.goto("/projects/p1");
   await page
-    .getByRole("button", { name: "Discover application paths", exact: true })
+    .getByRole("button", { name: "Start discovery", exact: true })
     .click();
   await expect(
     page.getByText("Discovery failed", { exact: true }),
@@ -652,7 +654,7 @@ test("expired discovery job can be cleared to recover", async ({ page }) => {
     .getByRole("button", { name: "Clear expired job", exact: true })
     .click();
   await expect(
-    page.getByRole("button", { name: "Discover application paths", exact: true }),
+    page.getByRole("button", { name: "Start discovery", exact: true }),
   ).toBeEnabled();
 });
 test("historical tests retain version context and low-confidence filters work", async ({
@@ -742,11 +744,11 @@ test("no map requests before discovery, including refresh and approval", async (
     .click();
   await page.getByRole("button", { name: "Confirm approval" }).click();
   await expect(
-    page.getByRole("heading", { name: "Meet your application" }),
+    page.getByRole("heading", { name: "Verify working screens" }),
   ).toBeVisible();
   expect(mapRequests).toHaveLength(0);
   await page
-    .getByRole("button", { name: "Discover application paths", exact: true })
+    .getByRole("button", { name: "Start discovery", exact: true })
     .click();
   await expect(
     page.getByRole("button", { name: "Review application map" }),

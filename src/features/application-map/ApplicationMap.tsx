@@ -150,19 +150,26 @@ export default function ApplicationMap({
       onOpen: () => setSelected(n.data.state),
     },
   }));
-  const edges = graph.edges.map((e) => ({
-    ...e,
-    type: "smoothstep",
-    animated: !!active && (e.source === active || e.target === active),
-    markerEnd: { type: MarkerType.ArrowClosed, color: "#81938c" },
-    style: {
-      stroke:
-        active && related.has(e.source) && related.has(e.target)
-          ? "#278066"
-          : "#bdc8c2",
-      strokeWidth: 1.5,
-    },
-  }));
+  const edges = graph.edges.map((e) => {
+    const highlighted = !!active && related.has(e.source) && related.has(e.target);
+    return {
+      ...e,
+      type: "smoothstep",
+      className: "app-flow-edge",
+      zIndex: 4,
+      animated: highlighted,
+      markerEnd: {
+        type: MarkerType.ArrowClosed,
+        color: highlighted ? "#146b48" : "#1f7a55",
+        width: 18,
+        height: 18,
+      },
+      style: {
+        stroke: highlighted ? "#146b48" : "#1f7a55",
+        strokeWidth: highlighted ? 3 : 2.4,
+      },
+    };
+  });
   return (
     <>
       <Card className="map-card">
@@ -204,10 +211,16 @@ export default function ApplicationMap({
               nodes={nodes}
               edges={edges}
               nodeTypes={nodeTypes}
+              defaultEdgeOptions={{
+                type: "smoothstep",
+                zIndex: 4,
+                style: { stroke: "#1f7a55", strokeWidth: 2.4 },
+              }}
               fitView
               fitViewOptions={{ padding: 0.2, maxZoom: 1 }}
               nodesDraggable={false}
               nodesConnectable={false}
+              edgesFocusable={false}
               onNodeClick={(_, n) => setSelected(n.data.state)}
               onNodeMouseEnter={(_, n) => setHover(n.id)}
               onNodeMouseLeave={() => setHover(undefined)}

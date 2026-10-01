@@ -109,7 +109,7 @@ export default function Workspace({ id }: { id: string }) {
     queryKey: [...key, "map"],
     queryFn: ({ signal }) => api.map(id, signal),
     refetchInterval: (q) =>
-      running || q.state.data?.status === "RUNNING" ? 2500 : false,
+      running || q.state.data?.status === "RUNNING" ? 1500 : false,
   });
   useEffect(() => {
     if (job.data && !activeJob(job.data.status)) {
@@ -178,10 +178,21 @@ export default function Workspace({ id }: { id: string }) {
       for (const acId of source?.uncovered_acs || []) {
         targets[acId] = ["POSITIVE", "NEGATIVE"];
       }
-      for (const gap of source?.partial_pairing_acs || []) {
-        const [acId, missing] = gap.split(": missing ");
-        if (acId && missing) {
-          targets[acId] = [...new Set([...(targets[acId] || []), ...missing.split("/")])];
+      for (const gap of source?.pairing_gaps || []) {
+        if (gap.ac_id && gap.missing?.length) {
+          targets[gap.ac_id] = [
+            ...new Set([...(targets[gap.ac_id] || []), ...gap.missing]),
+          ];
+        }
+      }
+      if (!source?.pairing_gaps?.length) {
+        for (const gap of source?.partial_pairing_acs || []) {
+          const [acId, missing] = gap.split(": missing ");
+          if (acId && missing) {
+            targets[acId] = [
+              ...new Set([...(targets[acId] || []), ...missing.split("/")]),
+            ];
+          }
         }
       }
       return api.generate(id, r!.id, map.data!.id, targets);
@@ -437,6 +448,8 @@ export default function Workspace({ id }: { id: string }) {
                   completingCoverage={coverageGeneration.isPending}
                   coverageError={coverageGeneration.error}
                   onCompleteCoverage={() => coverageGeneration.mutate()}
+                  approvals={approvals.data || []}
+                  requirement={r}
                 />
               )}{" "}
               {stage === 3 && !map.data && (
