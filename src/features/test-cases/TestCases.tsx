@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Sparkles,
   ArrowRight,
@@ -7,6 +7,7 @@ import {
   Download,
   ChevronRight,
   Plus,
+  Pencil,
 } from "lucide-react";
 import type {
   Approval,
@@ -29,12 +30,135 @@ import {
 } from "../../components/ui";
 import { human } from "../../utils/workflow";
 import { exportCompleteExcelReport } from "./exportExcel";
+import ReviewEditor from "./ReviewEditor";
 
 function lines(value: string) {
   return value
     .split(/\r?\n/)
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+function ReviewableRows({
+  test,
+  requirementLabel,
+  stale,
+  canReview,
+  showSelect,
+  selected,
+  editing,
+  onToggle,
+  onOpen,
+  onEdit,
+  onCancelEdit,
+  onSaved,
+  projectId,
+}: {
+  test: TestCase;
+  requirementLabel: string;
+  stale: boolean;
+  canReview: boolean;
+  showSelect: boolean;
+  selected: boolean;
+  editing: boolean;
+  onToggle: (checked: boolean) => void;
+  onOpen: () => void;
+  onEdit: () => void;
+  onCancelEdit: () => void;
+  onSaved: () => void;
+  projectId: string;
+}) {
+  const revise = useAction(
+    projectId,
+    (body: Parameters<typeof api.reviseTest>[1]) =>
+      api.reviseTest(test.id, body),
+  );
+  return (
+    <>
+      <tr className={editing ? "review-row-open" : ""}>
+        {showSelect && (
+          <td className="review-check-col">
+            {canReview ? (
+              <input
+                type="checkbox"
+                aria-label={`Select ${test.tc_code}`}
+                checked={selected}
+                onChange={(event) => onToggle(event.target.checked)}
+              />
+            ) : null}
+          </td>
+        )}
+        <td className="test-title-col">
+          <button className="test-title" onClick={onOpen}>
+            <span className="mono">{test.tc_code}</span>
+            <strong>{test.current.title}</strong>
+            {stale && (
+              <small className="stale">
+                Earlier requirement or map version
+              </small>
+            )}
+          </button>
+        </td>
+        <td>
+          <span className={`category ${test.current.category.toLowerCase()}`}>
+            {human(test.current.category)}
+          </span>
+        </td>
+        <td>
+          <StatusBadge status={test.status} />
+        </td>
+        <td>
+          <div className="confidence">
+            <span
+              className={test.current.confidence < 0.7 ? "low" : ""}
+              style={{
+                width: `${Math.max(0, Math.min(1, test.current.confidence)) * 100}%`,
+              }}
+            />
+          </div>
+          <small>{Math.round(test.current.confidence * 100)}%</small>
+        </td>
+        <td>
+          <span className="mono">
+            {requirementLabel} · v{test.requirement_version}
+          </span>
+          <small className="ac-list">
+            {test.current.traceability.join(" · ")}
+          </small>
+        </td>
+        <td className="review-actions">
+          {canReview && (
+            <button
+              className="icon-button"
+              aria-label={`Edit ${test.tc_code}`}
+              onClick={onEdit}
+            >
+              <Pencil size={15} />
+            </button>
+          )}
+          <button
+            className="icon-button"
+            aria-label={`Open ${test.tc_code}`}
+            onClick={onOpen}
+          >
+            <ChevronRight size={17} />
+          </button>
+        </td>
+      </tr>
+      {editing && (
+        <tr className="review-edit-row">
+          <td colSpan={showSelect ? 7 : 6}>
+            <ReviewEditor
+              test={test}
+              onCancel={onCancelEdit}
+              onSaved={onSaved}
+              save={(_item, body) => revise.mutateAsync(body)}
+            />
+          </td>
+        </tr>
+      )}
+    </>
+  );
 }
 
 function CreateEdgeCaseForm({
@@ -71,8 +195,8 @@ function CreateEdgeCaseForm({
   );
   const create = useAction(
     projectId,
-    (body: Parameters<typeof api.createTestCase>[1]) =>
-      api.createTestCase(projectId, body),
+    (body: Parameters<typeof api.createTest>[1]) =>
+      api.createTest(projectId, body),
     onClose,
   );
   return (
@@ -325,12 +449,11 @@ export function Generate({
         )}
         {!!error && <ErrorState error={error} />}
         <div className="actions">
-          <Button
-            onClick={() => onGenerate("all", [], [])}
-            busy={pending}
-          >
+          <Button onClick={() => onGenerate("all", [], [])} busy={pending}>
             <Sparkles size={16} />
-            {hasPreviousGeneration ? "Generate for whole graph" : "Generate test cases"}
+            {hasPreviousGeneration
+              ? "Generate for whole graph"
+              : "Generate test cases"}
           </Button>
           {hasPreviousGeneration && ungeneratedStates.length > 0 && (
             <Button
@@ -344,8 +467,9 @@ export function Generate({
         </div>
         {map.status === "PARTIAL" && (
           <div className="notice">
-            This map is partial. Generated tests will use the states discovered so far;
-            you can continue discovery and generate only for newly added states later.
+            This map is partial. Generated tests will use the states discovered
+            so far; you can continue discovery and generate only for newly added
+            states later.
           </div>
         )}
         {result && (
@@ -387,8 +511,6 @@ export default function TestCases({
   completingCoverage,
   coverageError,
   onCompleteCoverage,
-  approvals = [],
-  requirement,
 }: {
   projectId: string;
   tests: TestCase[];
@@ -410,54 +532,32 @@ export default function TestCases({
   const [creating, setCreating] = useState(false);
   const [exportingExcel, setExportingExcel] = useState(false);
   const [exportError, setExportError] = useState("");
-  const [reviewer, setReviewer] = useState("");
-  const [reason, setReason] = useState("");
-  const [draftTitle, setDraftTitle] = useState("");
-  const [draftObjective, setDraftObjective] = useState("");
-  const [draftExpected, setDraftExpected] = useState("");
-  const [draftNotes, setDraftNotes] = useState("");
-  const [draftTrace, setDraftTrace] = useState("");
-  const submit = useAction(
-    projectId,
-    (testCase: TestCase) => api.submitTest(testCase.id, testCase.current_version),
-    (updated) => setSelected(updated),
+  const [editingId, setEditingId] = useState<string>();
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkReviewer, setBulkReviewer] = useState("");
+  const reviewable = tests.filter((test) =>
+    ["DRAFT", "PENDING_APPROVAL", "REJECTED"].includes(test.status),
   );
+  useEffect(() => {
+    setSelectedIds(new Set(reviewable.map((test) => test.id)));
+  }, [tests]);
   const remove = useAction(
     projectId,
     (testCase: TestCase) => api.deleteTest(testCase.id),
     () => setSelected(undefined),
   );
-  const decide = useAction(
-    projectId,
-    (input: { approvalId: string; action: "approve" | "reject" }) =>
-      api.decide(input.approvalId, input.action, reviewer.trim(), reason.trim()),
-    () => setSelected(undefined),
-  );
-  const createDraft = useAction(
+  const bulkReview = useAction(
     projectId,
     () =>
-      api.createTest(projectId, {
-        requirement_id: requirement!.id,
-        application_map_id: map?.id,
-        title: draftTitle.trim(),
-        objective: draftObjective.trim(),
-        expected_result: draftExpected.trim(),
-        category: "EDGE_CASE",
-        traceability: draftTrace
-          .split(/[\s,]+/)
-          .map((id) => id.trim())
-          .filter(Boolean),
-        step_notes: draftNotes
-          .split("\n")
-          .map((line) => line.trim())
-          .filter(Boolean),
+      api.bulkReviewTests(projectId, {
+        decided_by: bulkReviewer.trim(),
+        test_case_ids: [...selectedIds].filter((id) =>
+          reviewable.some((test) => test.id === id),
+        ),
       }),
     () => {
-      setDraftTitle("");
-      setDraftObjective("");
-      setDraftExpected("");
-      setDraftNotes("");
-      setDraftTrace("");
+      setEditingId(undefined);
+      setSelected(undefined);
     },
   );
   const filtered = tests.filter(
@@ -552,92 +652,49 @@ export default function TestCases({
             result.needs_review_test_cases.length > 0 ||
             !!result.duplicates_skipped) && (
             <div className="notice">
-              <strong>Generation needs review</strong>
+              <strong>Review the generated drafts below</strong>
               {result.uncovered_acs.length > 0 && (
                 <p>
-                  Uncovered acceptance criteria:{" "}
-                  {result.uncovered_acs.join(", ")}
+                  {result.uncovered_acs.length} acceptance criteria still have
+                  no test: {result.uncovered_acs.join(", ")}
                 </p>
               )}
               {result.partial_pairing_acs.length > 0 && (
                 <p>
-                  Partial scenario pairing:{" "}
+                  {result.partial_pairing_acs.length} criteria need both a
+                  positive and a negative case:{" "}
                   {result.partial_pairing_acs.join(", ")}
                 </p>
               )}
               {result.needs_review_test_cases.length > 0 && (
                 <p>
-                  Flagged tests: {result.needs_review_test_cases.join(", ")}
+                  {result.needs_review_test_cases.length} generated case
+                  {result.needs_review_test_cases.length === 1
+                    ? " is"
+                    : "s are"}{" "}
+                  low confidence. Edit them in the list, then approve the batch.
                 </p>
               )}
               {!!result.duplicates_skipped && (
-                <p>{result.duplicates_skipped} duplicate draft(s) were skipped.</p>
+                <p>
+                  {result.duplicates_skipped} duplicate draft
+                  {result.duplicates_skipped === 1 ? " was" : "s were"} not
+                  saved again.
+                </p>
               )}
               {(result.uncovered_acs.length > 0 ||
                 result.partial_pairing_acs.length > 0) &&
                 onCompleteCoverage && (
-                  <Button onClick={onCompleteCoverage} busy={completingCoverage}>
+                  <Button
+                    onClick={onCompleteCoverage}
+                    busy={completingCoverage}
+                  >
                     <Sparkles size={16} />
                     Review and generate missing test cases
                   </Button>
                 )}
             </div>
           )}
-        {requirement && map && (
-          <details className="notice">
-            <summary>Add a tester-authored edge case</summary>
-            <div className="form-grid">
-              <label>
-                Title
-                <input value={draftTitle} onChange={(e) => setDraftTitle(e.target.value)} />
-              </label>
-              <label>
-                Objective
-                <input
-                  value={draftObjective}
-                  onChange={(e) => setDraftObjective(e.target.value)}
-                />
-              </label>
-              <label>
-                Expected result
-                <input
-                  value={draftExpected}
-                  onChange={(e) => setDraftExpected(e.target.value)}
-                />
-              </label>
-              <label>
-                Acceptance criteria ids
-                <input
-                  value={draftTrace}
-                  onChange={(e) => setDraftTrace(e.target.value)}
-                  placeholder="AC-1 AC-2"
-                />
-              </label>
-            </div>
-            <label>
-              Step notes
-              <textarea
-                rows={2}
-                value={draftNotes}
-                onChange={(e) => setDraftNotes(e.target.value)}
-              />
-            </label>
-            {createDraft.error && <ErrorState error={createDraft.error} />}
-            <Button
-              type="button"
-              busy={createDraft.isPending}
-              disabled={
-                !draftTitle.trim() ||
-                !draftObjective.trim() ||
-                !draftExpected.trim() ||
-                !draftTrace.trim()
-              }
-              onClick={() => createDraft.mutate()}
-            >
-              Save draft
-            </Button>
-          </details>
-        )}
         <div className="table-toolbar">
           <label className="search">
             <Search size={16} />
@@ -691,6 +748,45 @@ export default function TestCases({
             ))}
           </select>
         </div>
+        {!!reviewable.length && (
+          <div className="bulk-review-bar">
+            <label className="review-select-all">
+              <input
+                type="checkbox"
+                aria-label="Select all reviewable test cases"
+                checked={
+                  reviewable.length > 0 &&
+                  reviewable.every((test) => selectedIds.has(test.id))
+                }
+                onChange={(event) => {
+                  setSelectedIds(
+                    event.target.checked
+                      ? new Set(reviewable.map((test) => test.id))
+                      : new Set(),
+                  );
+                }}
+              />
+              {selectedIds.size} selected
+            </label>
+            <label>
+              Reviewer name
+              <input
+                value={bulkReviewer}
+                onChange={(event) => setBulkReviewer(event.target.value)}
+                placeholder="Your name"
+              />
+            </label>
+            {bulkReview.error && <ErrorState error={bulkReview.error} />}
+            <Button
+              type="button"
+              busy={bulkReview.isPending}
+              disabled={!bulkReviewer.trim() || selectedIds.size === 0}
+              onClick={() => bulkReview.mutate()}
+            >
+              Approve selected ({selectedIds.size})
+            </Button>
+          </div>
+        )}
         {!filtered.length ? (
           <EmptyState
             title={
@@ -709,13 +805,18 @@ export default function TestCases({
             <table>
               <thead>
                 <tr>
+                  {reviewable.length > 0 && (
+                    <th className="review-check-col">
+                      <span className="sr-only">Select</span>
+                    </th>
+                  )}
                   <th>Test case</th>
                   <th>Category</th>
                   <th>Status</th>
                   <th>Confidence</th>
                   <th>Traceability</th>
                   <th>
-                    <span className="sr-only">Details</span>
+                    <span className="sr-only">Actions</span>
                   </th>
                 </tr>
               </thead>
@@ -725,62 +826,35 @@ export default function TestCases({
                   const stale =
                     r?.version !== t.requirement_version ||
                     map?.id !== t.application_map_id;
+                  const canReview = [
+                    "DRAFT",
+                    "PENDING_APPROVAL",
+                    "REJECTED",
+                  ].includes(t.status);
                   return (
-                    <tr key={t.id}>
-                      <td>
-                        <button
-                          className="test-title"
-                          onClick={() => setSelected(t)}
-                        >
-                          <span className="mono">{t.tc_code}</span>
-                          <strong>{t.current.title}</strong>
-                          {stale && (
-                            <small className="stale">
-                              Earlier requirement or map version
-                            </small>
-                          )}
-                        </button>
-                      </td>
-                      <td>
-                        <span
-                          className={`category ${t.current.category.toLowerCase()}`}
-                        >
-                          {human(t.current.category)}
-                        </span>
-                      </td>
-                      <td>
-                        <StatusBadge status={t.status} />
-                      </td>
-                      <td>
-                        <div className="confidence">
-                          <span
-                            className={t.current.confidence < 0.7 ? "low" : ""}
-                            style={{
-                              width: `${Math.max(0, Math.min(1, t.current.confidence)) * 100}%`,
-                            }}
-                          />
-                        </div>
-                        <small>{Math.round(t.current.confidence * 100)}%</small>
-                      </td>
-                      <td>
-                        <span className="mono">
-                          {r?.req_code || "Requirement"} · v
-                          {t.requirement_version}
-                        </span>
-                        <small className="ac-list">
-                          {t.current.traceability.join(" · ")}
-                        </small>
-                      </td>
-                      <td>
-                        <button
-                          className="icon-button"
-                          aria-label={`Open ${t.tc_code}`}
-                          onClick={() => setSelected(t)}
-                        >
-                          <ChevronRight size={17} />
-                        </button>
-                      </td>
-                    </tr>
+                    <ReviewableRows
+                      key={t.id}
+                      test={t}
+                      requirementLabel={r?.req_code || "Requirement"}
+                      stale={stale}
+                      canReview={canReview}
+                      showSelect={reviewable.length > 0}
+                      selected={selectedIds.has(t.id)}
+                      editing={editingId === t.id}
+                      onToggle={(checked) => {
+                        setSelectedIds((current) => {
+                          const next = new Set(current);
+                          if (checked) next.add(t.id);
+                          else next.delete(t.id);
+                          return next;
+                        });
+                      }}
+                      onOpen={() => setSelected(t)}
+                      onEdit={() => setEditingId(t.id)}
+                      onCancelEdit={() => setEditingId(undefined)}
+                      onSaved={() => setEditingId(undefined)}
+                      projectId={projectId}
+                    />
                   );
                 })}
               </tbody>
@@ -788,8 +862,10 @@ export default function TestCases({
           </div>
         )}
         <div className="table-footer">
-          {filtered.length} of {tests.length} test cases{" "}
-          <span>Drafts are not execution results</span>
+          {filtered.length} of {tests.length} test cases
+          {reviewable.length > 0 ? (
+            <span>Select, edit if needed, then approve the batch</span>
+          ) : null}
         </div>
       </Card>
       {creating && (
@@ -909,81 +985,20 @@ export default function TestCases({
             <summary>Test data</summary>
             <pre>{JSON.stringify(selected.current.test_data, null, 2)}</pre>
           </details>
-          <div className="form-grid">
-            <label>
-              Reviewer name
-              <input
-                value={reviewer}
-                onChange={(e) => setReviewer(e.target.value)}
-                placeholder="Your name"
-              />
-            </label>
-            <label>
-              Review note
-              <input
-                value={reason}
-                onChange={(e) => setReason(e.target.value)}
-                placeholder="Required when requesting a revision"
-              />
-            </label>
-          </div>
-          {(submit.error || remove.error || decide.error) && (
-            <ErrorState error={submit.error || remove.error || decide.error} />
-          )}
+          {remove.error && <ErrorState error={remove.error} />}
           <div className="actions">
-            {(selected.status === "DRAFT" || selected.status === "REJECTED") && (
+            {selected.status !== "APPROVED" && (
               <Button
                 type="button"
-                busy={submit.isPending}
-                onClick={() => submit.mutate(selected)}
+                onClick={() => {
+                  setEditingId(selected.id);
+                  setSelected(undefined);
+                }}
               >
-                Submit for approval
+                <Pencil size={15} />
+                Edit in list
               </Button>
             )}
-            {selected.status === "PENDING_APPROVAL" &&
-              approvals.find(
-                (approval) =>
-                  approval.target_type === "test_case" &&
-                  approval.target_id === selected.id,
-              ) && (
-                <>
-                  <Button
-                    variant="secondary"
-                    type="button"
-                    disabled={!reviewer.trim() || !reason.trim()}
-                    busy={decide.isPending}
-                    onClick={() =>
-                      decide.mutate({
-                        approvalId: approvals.find(
-                          (approval) =>
-                            approval.target_type === "test_case" &&
-                            approval.target_id === selected.id,
-                        )!.id,
-                        action: "reject",
-                      })
-                    }
-                  >
-                    Request revision
-                  </Button>
-                  <Button
-                    type="button"
-                    disabled={!reviewer.trim()}
-                    busy={decide.isPending}
-                    onClick={() =>
-                      decide.mutate({
-                        approvalId: approvals.find(
-                          (approval) =>
-                            approval.target_type === "test_case" &&
-                            approval.target_id === selected.id,
-                        )!.id,
-                        action: "approve",
-                      })
-                    }
-                  >
-                    Approve test case
-                  </Button>
-                </>
-              )}
             {selected.status !== "APPROVED" && (
               <Button
                 variant="secondary"

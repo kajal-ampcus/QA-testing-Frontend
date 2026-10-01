@@ -7,6 +7,7 @@ import type {
   Job,
   TestCase,
   Generation,
+  BulkReviewResult,
 } from "../types/api";
 
 export class ApiError extends Error {
@@ -138,7 +139,14 @@ export const api = {
       max_duration_seconds: number;
       worker_limit?: number;
       automatic_limits?: boolean;
-      discovery_mode?: "entry_points" | "auth_flow" | "modules" | "inventory" | "deep" | "complete" | "full";
+      discovery_mode?:
+        | "entry_points"
+        | "auth_flow"
+        | "modules"
+        | "inventory"
+        | "deep"
+        | "complete"
+        | "full";
       selected_auth_flow?: string | null;
       selected_auth_flows?: string[];
       selected_areas?: string[];
@@ -195,9 +203,15 @@ export const api = {
       password: body.password,
       set_as_project_default: body.is_default,
       ...(body.login_url ? { login_url: body.login_url } : {}),
-      ...(body.username_selector ? { username_selector: body.username_selector } : {}),
-      ...(body.password_selector ? { password_selector: body.password_selector } : {}),
-      ...(body.submit_selector ? { submit_selector: body.submit_selector } : {}),
+      ...(body.username_selector
+        ? { username_selector: body.username_selector }
+        : {}),
+      ...(body.password_selector
+        ? { password_selector: body.password_selector }
+        : {}),
+      ...(body.submit_selector
+        ? { submit_selector: body.submit_selector }
+        : {}),
     }),
 
   /** Legacy single-account compat — wraps saveAccount with role=Default */
@@ -248,9 +262,15 @@ export const api = {
         ...(body.username ? { username: body.username } : {}),
         ...(body.password ? { password: body.password } : {}),
         ...(body.login_url ? { login_url: body.login_url } : {}),
-        ...(body.username_selector ? { username_selector: body.username_selector } : {}),
-        ...(body.password_selector ? { password_selector: body.password_selector } : {}),
-        ...(body.submit_selector ? { submit_selector: body.submit_selector } : {}),
+        ...(body.username_selector
+          ? { username_selector: body.username_selector }
+          : {}),
+        ...(body.password_selector
+          ? { password_selector: body.password_selector }
+          : {}),
+        ...(body.submit_selector
+          ? { submit_selector: body.submit_selector }
+          : {}),
       },
     ),
 
@@ -307,8 +327,32 @@ export const api = {
     },
   ) => request<TestCase>(`/test-cases/projects/${projectId}`, body),
 
+  reviseTest: (
+    testCaseId: string,
+    body: {
+      expected_version: number;
+      title: string;
+      objective: string;
+      expected_result: string;
+      category: "POSITIVE" | "NEGATIVE" | "EDGE_CASE";
+      traceability: string[];
+      preconditions: string[];
+      steps: TestCase["current"]["steps"];
+      test_data: Record<string, unknown>;
+    },
+  ) => request<TestCase>(`/test-cases/${testCaseId}/revisions`, body),
+
   submitTest: (testCaseId: string, expected_version: number) =>
     request<TestCase>(`/test-cases/${testCaseId}/submit`, { expected_version }),
+
+  bulkReviewTests: (
+    projectId: string,
+    body: { decided_by: string; test_case_ids: string[] },
+  ) =>
+    request<BulkReviewResult>(
+      `/test-cases/projects/${projectId}/bulk-review`,
+      body,
+    ),
 
   deleteTest: (testCaseId: string) =>
     request<void>(`/test-cases/${testCaseId}`, undefined, undefined, "DELETE"),

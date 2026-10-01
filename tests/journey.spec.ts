@@ -379,6 +379,40 @@ async function fixture(
         partial_pairing_acs: [],
         needs_review_test_cases: [],
       };
+    } else if (path === "/test-cases/projects/p1/bulk-review") {
+      expect(body.decided_by).toBeTruthy();
+      expect(body.test_case_ids).toContain("t1");
+      state.tests = state.tests.map((item) => ({
+        ...item,
+        status: "APPROVED",
+      }));
+      result = {
+        approved: body.test_case_ids.length,
+        skipped: 0,
+        failed: [],
+        test_cases: state.tests,
+      };
+    } else if (/^\/test-cases\/[^/]+\/revisions$/.test(path) && post) {
+      state.tests = state.tests.map((item) =>
+        item.id === path.split("/")[2]
+          ? {
+              ...item,
+              status: "DRAFT",
+              current_version: item.current_version + 1,
+              current: {
+                ...item.current,
+                version: item.current.version + 1,
+                title: body.title,
+                objective: body.objective,
+                expected_result: body.expected_result,
+                preconditions: body.preconditions,
+                steps: body.steps,
+              },
+            }
+          : item,
+      );
+      result = state.tests.find((item) => item.id === path.split("/")[2]);
+      status = 201;
     } else if (path === "/test-cases/projects/p1") result = state.tests;
     else {
       status = 404;
@@ -470,7 +504,17 @@ test("complete journey: create, clarify, approve, discover, map, generate, inspe
     .getByRole("button", { name: "Generate test cases", exact: true })
     .click();
   await expect(
-    page.getByText("Generation needs review", { exact: true }),
+    page.getByText("Review the generated drafts below", { exact: true }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Edit TC-001" }).click();
+  await page
+    .getByLabel("Expected result", { exact: true })
+    .fill("Dashboard is visible after sign-in.");
+  await page.getByRole("button", { name: "Save edits" }).click();
+  await page.getByLabel("Reviewer name").fill("QA Reviewer");
+  await page.getByRole("button", { name: "Approve selected (1)" }).click();
+  await expect(
+    page.getByText("Approved", { exact: true }).first(),
   ).toBeVisible();
   await page.getByRole("button", { name: "Open TC-001" }).click();
   await expect(

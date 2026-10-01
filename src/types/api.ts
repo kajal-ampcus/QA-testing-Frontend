@@ -91,7 +91,15 @@ export interface DiscoveryCheckpoint {
   } | null;
   version: number;
   configuration: {
-    mode: "entry_points" | "auth_flow" | "modules" | "inventory" | "deep" | "complete" | "targeted" | "full";
+    mode:
+      | "entry_points"
+      | "auth_flow"
+      | "modules"
+      | "inventory"
+      | "deep"
+      | "complete"
+      | "targeted"
+      | "full";
     selected_auth_flow?: string | null;
     selected_auth_flows?: string[];
     selected_areas: string[];
@@ -210,4 +218,11 @@ export interface Generation {
   pairing_gaps?: { ac_id: string; missing: string[] }[];
   needs_review_test_cases: string[];
   duplicates_skipped?: number;
+}
+
+export interface BulkReviewResult {
+  approved: number;
+  skipped: number;
+  failed: { test_case_id: string; tc_code?: string | null; error: string }[];
+  test_cases: TestCase[];
 }
