@@ -1,8 +1,7 @@
-import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useEffect, useRef, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Play, Download } from "lucide-react";
 import { api, ApiError } from "../../api/client";
-import { useAction } from "../../hooks/useAction";
 import { activeJob } from "../../utils/workflow";
 import {
   Button,
@@ -26,30 +25,29 @@ const CHANNELS = [
   "network_log",
 ] as const;
 
+const startingSuites = new Set<string>();
+
 export default function Execution({
   projectId,
   generations,
+  startToken = 0,
 }: {
   projectId: string;
   generations: AutomationList["generations"];
+  startToken?: number;
 }) {
   const [generationId, setGenerationId] = useState(generations[0]?.generation_id || "");
   const [runDestructive, setRunDestructive] = useState(false);
   const [jobId, setJobId] = useState("");
   const [openedId, setOpenedId] = useState<string | null>(null);
+  const [booting, setBooting] = useState(false);
+  const [autoError, setAutoError] = useState<unknown>(null);
+  const handledToken = useRef<number | null>(null);
+  const client = useQueryClient();
   const history = useQuery({
     queryKey: ["workspace", projectId, "executions"],
     queryFn: ({ signal }) => api.executions(projectId, signal),
   });
-  const start = useAction(
-    projectId,
-    (body: { generation_id: string; run_destructive: boolean }) =>
-      api.startExecution(projectId, body),
-    (data) => {
-      setJobId(data.job_id);
-      setOpenedId(data.run_id);
-    },
-  );
   const job = useQuery({
     queryKey: ["workspace", projectId, "execution-job", jobId],
     queryFn: ({ signal }) => api.executionJob(jobId, signal),
@@ -66,7 +64,94 @@ export default function Execution({
     },
   });
   const running = !!jobId && !job.error && (!job.data || activeJob(job.data.status));
-  const selectedId = openedId || job.data?.run_id || history.data?.runs[0]?.id || "";
+  const beginRun = async (generation: string, runDestructiveFlag = false) => {
+    const key = `${projectId}:${generation}`;
+    if (startingSuites.has(key)) return;
+    startingSuites.add(key);
+    setBooting(true);
+    setAutoError(null);
+    setOpenedId(null);
+    setJobId("");
+    try {
+      const data = await api.startExecution(projectId, {
+        generation_id: generation,
+        run_destructive: runDestructiveFlag,
+      });
+      setJobId(data.job_id);
+      setOpenedId(data.run_id);
+      await client.invalidateQueries({ queryKey: ["workspace", projectId, "executions"] });
+    } catch (err: unknown) {
+      if (err instanceof ApiError && err.status === 409) {
+        const fresh = await api.executions(projectId);
+        const active = fresh.runs.find(
+          (item) =>
+            item.generation_id === generation &&
+            (item.status === "QUEUED" || item.status === "RUNNING") &&
+            item.job_id,
+        );
+        if (active?.job_id) {
+          setJobId(active.job_id);
+          setOpenedId(active.id);
+          return;
+        }
+      }
+      setAutoError(err);
+    } finally {
+      startingSuites.delete(key);
+      setBooting(false);
+    }
+  };
+  useEffect(() => {
+    if (handledToken.current === startToken) return;
+    if (!generationId || history.isPending) return;
+    handledToken.current = startToken;
+    const raw = sessionStorage.getItem(`execution-job:${projectId}`);
+    let saved: { job_id?: string; run_id?: string; generation_id?: string } | null = null;
+    if (raw) {
+      sessionStorage.removeItem(`execution-job:${projectId}`);
+      try {
+        saved = JSON.parse(raw) as { job_id?: string; run_id?: string; generation_id?: string };
+      } catch {
+        saved = null;
+      }
+    }
+    const generation = saved?.generation_id || generationId;
+    const live = history.data?.runs.find(
+      (item) =>
+        item.generation_id === generation &&
+        (item.status === "QUEUED" || item.status === "RUNNING") &&
+        item.job_id,
+    );
+    if (live?.job_id) {
+      if (saved?.generation_id) setGenerationId(saved.generation_id);
+      setJobId(live.job_id);
+      setOpenedId(live.id);
+      return;
+    }
+    if (saved?.job_id) {
+      const savedJobId = saved.job_id;
+      const savedRunId = saved.run_id;
+      const savedGeneration = saved.generation_id;
+      void api
+        .executionJob(savedJobId)
+        .then((job) => {
+          if (activeJob(job.status)) {
+            if (savedGeneration) setGenerationId(savedGeneration);
+            setJobId(savedJobId);
+            if (savedRunId) setOpenedId(savedRunId);
+            return;
+          }
+          void beginRun(generation);
+        })
+        .catch(() => {
+          void beginRun(generation);
+        });
+      return;
+    }
+    void beginRun(generation);
+  }, [startToken, projectId, generationId, history.isPending, history.data, client]);
+  const selectedId =
+    openedId || job.data?.run_id || (booting ? "" : history.data?.runs[0]?.id || "");
   const detail = useQuery({
     queryKey: ["workspace", projectId, "execution-run", selectedId],
     queryFn: ({ signal }) => api.executionRun(projectId, selectedId, signal),
@@ -89,8 +174,8 @@ export default function Execution({
             <div>
               <h2>Execution</h2>
               <p>
-                Run a reviewed Playwright suite against the application. Pass and fail
-                come from assertions, not a model.
+                After the suite is generated, this step runs that Playwright code
+                on the server. Run suite starts it again.
               </p>
             </div>
           </div>
@@ -133,27 +218,22 @@ export default function Execution({
               )}
               <div className="actions">
                 <Button
-                  busy={start.isPending || running}
-                  disabled={!generationId || running}
-                  onClick={() =>
-                    start.mutate({
-                      generation_id: generationId,
-                      run_destructive: canDestroy && runDestructive,
-                    })
-                  }
+                  busy={booting || running}
+                  disabled={!generationId || booting || running}
+                  onClick={() => void beginRun(generationId, canDestroy && runDestructive)}
                 >
                   Run suite
                 </Button>
               </div>
             </>
           )}
-          {(start.isPending || running) && (
+          {(booting || running) && (
             <ProgressIndicator
               label="Running Playwright"
-              description="The worker is executing the suite and capturing evidence."
+              description="A browser window opens on this computer and walks through the site. Results appear here as each check finishes."
             />
           )}
-          {start.error && <ErrorState error={start.error} />}
+          {autoError ? <ErrorState error={autoError} /> : null}
           {job.error && <ErrorState error={job.error} />}
           {detail.error && <ErrorState error={detail.error} />}
         </Card>
@@ -224,8 +304,8 @@ function RunDetail({
       </div>
       {run.detail && <p className="notice error">{run.detail}</p>}
       <p className="muted">
-        There is no live browser window in the worker. After the run, use video
-        and trace to replay every step and check expected versus actual.
+        While the run is in progress, watch the browser window on this computer.
+        After it finishes, use video and trace to replay any step.
       </p>
       <dl className="automation-counts">
         <div>

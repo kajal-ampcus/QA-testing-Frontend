@@ -87,7 +87,19 @@ export default function Automation({
   const generate = useAction(
     projectId,
     (ids: string[]) => api.generateAutomation(projectId, ids),
-    () => setOpenedId(null),
+    (data) => {
+      setOpenedId(data.generation_id);
+      if (!data.execution_job_id) return;
+      sessionStorage.setItem(
+        `execution-job:${projectId}`,
+        JSON.stringify({
+          job_id: data.execution_job_id,
+          run_id: data.execution_run_id,
+          generation_id: data.generation_id,
+        }),
+      );
+      onNext?.();
+    },
   );
 
   const history = useQuery({
@@ -220,7 +232,7 @@ export default function Automation({
           {generate.isPending && (
             <ProgressIndicator
               label="Writing the suite"
-              description="Resolving observed locators and reviewing the TypeScript output."
+              description="The server writes the Playwright code, then starts the execution agent."
             />
           )}
 
@@ -253,9 +265,10 @@ export default function Automation({
           </h3>
 
           <p>
-            The suite is static TypeScript. Download it, open it in an editor,
-            or continue to Execution to run it against the application.
-            Destructive flows stay skipped until RUN_DESTRUCTIVE is true.
+            After the suite is written, the execution agent runs
+            npx playwright test on the server. You do not need to run that
+            command yourself. Destructive flows stay skipped until
+            RUN_DESTRUCTIVE is true.
           </p>
         </Card>
 

@@ -292,6 +292,8 @@ export interface AutomationGeneration {
   cursor_url: string | null;
   executed: boolean;
   label: string;
+  execution_job_id?: string | null;
+  execution_run_id?: string | null;
   sources: AutomationSource[];
 }
 

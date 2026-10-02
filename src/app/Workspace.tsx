@@ -158,7 +158,9 @@ export default function Workspace({ id }: { id: string }) {
     0,
     Math.min(Number.isInteger(parsed) ? parsed : inferred, available),
   );
+  const [executionStart, setExecutionStart] = useState(0);
   const navigateStage = (n: number) => {
+    if (n === 7) setExecutionStart((value) => value + 1);
     setParams((p) => {
       p.set("stage", String(n));
       return p;
@@ -489,6 +491,7 @@ export default function Workspace({ id }: { id: string }) {
                 <Execution
                   projectId={id}
                   generations={automation.data?.generations || []}
+                  startToken={executionStart}
                 />
               )}{" "}
               {stage === 3 && !map.data && (
