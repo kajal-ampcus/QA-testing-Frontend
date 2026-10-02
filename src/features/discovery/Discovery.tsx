@@ -22,6 +22,7 @@ import { ApplicationAccess } from "./ApplicationAccess";
 import LiveDiscoveryGraph from "./LiveDiscoveryGraph";
 import type { ApplicationGraphData } from "../application-map/graphLayout";
 import { DiscoveryDiagnosticPanel } from "./DiscoveryDiagnosticPanel";
+import { loginFailureNotice } from "../application-map/ApplicationMap";
 
 export default function Discovery({
   project,
@@ -116,7 +117,7 @@ export default function Discovery({
   );
   const stopDiscovery = useAction(
     project.id,
-    () => api.cancelDiscovery(job!.job_id),
+    () => api.stopDiscovery(project.id),
     onStopped,
   );
 
@@ -212,7 +213,6 @@ export default function Discovery({
                 type="button"
                 variant="secondary"
                 busy={stopDiscovery.isPending}
-                disabled={!job?.job_id}
                 onClick={() => stopDiscovery.mutate()}
               >
                 <Square size={15} />
@@ -435,9 +435,19 @@ export default function Discovery({
         )}
 
         {/* Next action */}
-        {map?.diagnostic_evidence && !running && (
+        {map && !running && (map.diagnostic_evidence || loginFailureNotice(map)) && (
           <DiscoveryDiagnosticPanel
-            diagnostic={map.diagnostic_evidence}
+            diagnostic={
+              map.diagnostic_evidence ?? {
+                auth_attempted: true,
+                auth_succeeded: false,
+                login_error: loginFailureNotice(map),
+                screenshot_ref: null,
+                termination_detail:
+                  "Login was attempted and did not succeed, so pages after login were not discovered.",
+                failed_actions: [],
+              }
+            }
             status={map.status}
             mapId={map.id}
           />

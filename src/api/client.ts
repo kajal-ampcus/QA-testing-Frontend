@@ -183,6 +183,15 @@ export const api = {
       "DELETE",
     ),
 
+  /** Stop the project crawl even when the worker job id is already gone. */
+  stopDiscovery: (projectId: string) =>
+    request<{ job_id: string; status: string }>(
+      `/application-maps/projects/${projectId}/discover`,
+      undefined,
+      undefined,
+      "DELETE",
+    ),
+
   // ── Credentials (multi-account) ───────────────────────────
   /**
    * Save a new named test account.

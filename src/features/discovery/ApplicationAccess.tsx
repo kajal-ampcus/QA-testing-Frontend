@@ -15,7 +15,7 @@
  *   - credential_ref (opaque key) is what the discovery payload carries
  */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   KeyRound,
@@ -56,7 +56,7 @@ function roleColor(role: string): string {
 interface AccountFormProps {
   projectId: string;
   existing?: ProjectAccount;
-  onDone: () => void;
+  onDone: (saved?: ProjectAccount) => void;
   running: boolean;
   isFirstAccount: boolean;
 }
@@ -113,11 +113,11 @@ function AccountForm({
         password,
       });
     },
-    onSuccess: async () => {
+    onSuccess: async (saved) => {
       await client.invalidateQueries({
         queryKey: ["accounts", projectId],
       });
-      onDone();
+      onDone(saved);
     },
   });
 
@@ -244,7 +244,7 @@ function AccountForm({
       {save.error && <ErrorState error={save.error} />}
 
       <div className="actions">
-        <Button variant="secondary" type="button" onClick={onDone}>
+        <Button variant="secondary" type="button" onClick={() => onDone()}>
           Cancel
         </Button>
         <Button type="submit" busy={save.isPending} disabled={running}>
@@ -295,7 +295,10 @@ function AccountRow({
         <AccountForm
           projectId={projectId}
           existing={account}
-          onDone={() => setEditing(false)}
+          onDone={(saved) => {
+            setEditing(false);
+            if (saved?.credential_ref) onSelect(saved.credential_ref);
+          }}
           running={running}
           isFirstAccount={false}
         />
@@ -461,11 +464,16 @@ export function ApplicationAccess({
   const list: ProjectAccount[] = accounts.data ?? [];
   const hasAccounts = list.length > 0 || savedBadge;
 
-  // Auto-select the default account when the list loads and nothing is selected
-  if (accounts.isSuccess && !selectedRef && list.length > 0) {
-    const def = list.find((a) => a.is_default) ?? list[0];
-    onSelectRef(def.credential_ref);
-  }
+  // Keep the selected account on an active row. Saving again retires the
+  // previous credential id, so a stale selection must move to the new one.
+  useEffect(() => {
+    if (!accounts.isSuccess || list.length === 0) return;
+    const stillActive =
+      !!selectedRef && list.some((account) => account.credential_ref === selectedRef);
+    if (stillActive) return;
+    const next = list.find((account) => account.is_default) ?? list[0];
+    if (next.credential_ref !== selectedRef) onSelectRef(next.credential_ref);
+  }, [accounts.isSuccess, accounts.data, list, selectedRef, onSelectRef]);
 
   return (
     <div className="card">
@@ -590,8 +598,9 @@ export function ApplicationAccess({
               </div>
               <AccountForm
                 projectId={projectId}
-                onDone={() => {
+                onDone={(saved) => {
                   setAdding(false);
+                  if (saved?.credential_ref) onSelectRef(saved.credential_ref);
                   void accounts.refetch();
                 }}
                 running={running}

@@ -62,6 +62,28 @@ function StateNode({
   );
 }
 const nodeTypes = { application: StateNode };
+
+export function loginFailureNotice(map: AppMap): string | null {
+  if (map.coverage?.authenticated_explored === true) return null;
+  if (map.diagnostic_evidence?.auth_succeeded) return null;
+  const stored = map.diagnostic_evidence?.login_error;
+  const failed = map.coverage?.failed_actions;
+  const fromCoverage = Array.isArray(failed)
+    ? failed
+        .map((item) =>
+          item && typeof item === "object" && "detail" in item
+            ? String(item.detail ?? "")
+            : "",
+        )
+        .find((detail) =>
+          /authentication failed|could not be read|sign-in page/i.test(detail),
+        )
+    : undefined;
+  const raw = stored || fromCoverage;
+  if (!raw) return null;
+  return raw.split("Page text snippet")[0].trim();
+}
+
 export default function ApplicationMap({
   map,
   onNext,
@@ -74,6 +96,7 @@ export default function ApplicationMap({
   const [selected, setSelected] = useState<AppState>();
   const [hover, setHover] = useState<string>();
   const [search, setSearch] = useState("");
+  const loginFailure = loginFailureNotice(map);
 
   // ------------------------------------------------------------
   // FULLSCREEN
@@ -186,6 +209,12 @@ export default function ApplicationMap({
           </div>
           <StatusBadge status={map.status} />
         </div>
+        {loginFailure && (
+          <p className="notice" role="alert">
+            <strong>Login did not succeed. </strong>
+            {loginFailure} Pages after login were not discovered.
+          </p>
+        )}
         <div className="map-toolbar">
           <label className="search">
             <Search size={15} />

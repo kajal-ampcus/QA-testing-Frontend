@@ -81,7 +81,6 @@ export default function Workspace({ id }: { id: string }) {
     }
   }, [job.error, id]);
 
-
   const running =
     !!jobId && !job.error && (!job.data || activeJob(job.data.status));
   const project = useQuery({
@@ -186,31 +185,8 @@ export default function Workspace({ id }: { id: string }) {
   );
   const coverageGeneration = useAction(
     id,
-    () => {
-      const source = coverageGeneration.data || generation.data;
-      const targets: Record<string, string[]> = {};
-      for (const acId of source?.uncovered_acs || []) {
-        targets[acId] = ["POSITIVE", "NEGATIVE"];
-      }
-      for (const gap of source?.pairing_gaps || []) {
-        if (gap.ac_id && gap.missing?.length) {
-          targets[gap.ac_id] = [
-            ...new Set([...(targets[gap.ac_id] || []), ...gap.missing]),
-          ];
-        }
-      }
-      if (!source?.pairing_gaps?.length) {
-        for (const gap of source?.partial_pairing_acs || []) {
-          const [acId, missing] = gap.split(": missing ");
-          if (acId && missing) {
-            targets[acId] = [
-              ...new Set([...(targets[acId] || []), ...missing.split("/")]),
-            ];
-          }
-        }
-      }
-      return api.generate(id, r!.id, map.data!.id, targets);
-    },
+    (targets: Record<string, string[]>) =>
+      api.generate(id, r!.id, map.data!.id, targets),
   );
   useEffect(() => {
     if (!generation.isPending && !coverageGeneration.isPending) return;
@@ -357,7 +333,8 @@ export default function Workspace({ id }: { id: string }) {
               Add requirement
             </Button>
             <span className="workspace-progress">
-              {complete.filter(Boolean).length} of {stages.length} stages complete
+              {complete.filter(Boolean).length} of {stages.length} stages
+              complete
             </span>
           </div>
           <WorkflowStepper
@@ -449,20 +426,23 @@ export default function Workspace({ id }: { id: string }) {
                   onRetry={() => navigateStage(2)}
                 />
               )}{" "}
-              {stage === 4 && r && map.data && ["COMPLETE", "PARTIAL"].includes(map.data.status) && (
-                <Generate
-                  requirement={r}
-                  map={map.data}
-                  pending={generation.isPending}
-                  savedCount={currentTests.length}
-                  error={generation.error}
-                  result={generation.data}
-                  onGenerate={(scope, areaIds, moduleIds) =>
-                    generation.mutate({ scope, areaIds, moduleIds })
-                  }
-                  onReview={() => navigateStage(5)}
-                />
-              )}{" "}
+              {stage === 4 &&
+                r &&
+                map.data &&
+                ["COMPLETE", "PARTIAL"].includes(map.data.status) && (
+                  <Generate
+                    requirement={r}
+                    map={map.data}
+                    pending={generation.isPending}
+                    savedCount={currentTests.length}
+                    error={generation.error}
+                    result={generation.data}
+                    onGenerate={(scope, areaIds, moduleIds) =>
+                      generation.mutate({ scope, areaIds, moduleIds })
+                    }
+                    onReview={() => navigateStage(5)}
+                  />
+                )}{" "}
               {stage === 5 && (
                 <TestCases
                   projectId={id}
@@ -472,7 +452,9 @@ export default function Workspace({ id }: { id: string }) {
                   result={coverageGeneration.data || generation.data}
                   completingCoverage={coverageGeneration.isPending}
                   coverageError={coverageGeneration.error}
-                  onCompleteCoverage={() => coverageGeneration.mutate()}
+                  onCompleteCoverage={(targets) =>
+                    coverageGeneration.mutate(targets)
+                  }
                   approvals={approvals.data || []}
                   requirement={r}
                   onNext={() => navigateStage(6)}
