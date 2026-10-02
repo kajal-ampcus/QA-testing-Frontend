@@ -7,10 +7,20 @@ import {
   Sparkles,
   ListChecks,
   Code2,
+  Play,
   LockKeyhole,
 } from "lucide-react";
 import { stages } from "../../utils/workflow";
-const icons = [FileText, ShieldCheck, Radar, Network, Sparkles, ListChecks, Code2];
+const icons = [
+  FileText,
+  ShieldCheck,
+  Radar,
+  Network,
+  Sparkles,
+  ListChecks,
+  Code2,
+  Play,
+];
 export function AnimatedConnector({
   complete,
   active,

@@ -10,6 +10,10 @@ import type {
   BulkReviewResult,
   AutomationGeneration,
   AutomationList,
+  ExecutionJob,
+  ExecutionList,
+  ExecutionRun,
+  ExecutionTrigger,
 } from "../types/api";
 
 export class ApiError extends Error {
@@ -398,6 +402,62 @@ export const api = {
     const link = document.createElement("a");
     link.href = url;
     link.download = `playwright-${generationId}.zip`;
+    link.click();
+    URL.revokeObjectURL(url);
+  },
+
+  executions: (id: string, signal?: AbortSignal) =>
+    request<ExecutionList>(`/executions/projects/${id}`, undefined, signal),
+
+  executionRun: (projectId: string, runId: string, signal?: AbortSignal) =>
+    request<ExecutionRun>(
+      `/executions/projects/${projectId}/runs/${runId}`,
+      undefined,
+      signal,
+    ),
+
+  executionJob: (jobId: string, signal?: AbortSignal) =>
+    request<ExecutionJob>(
+      `/executions/jobs/${encodeURIComponent(jobId)}`,
+      undefined,
+      signal,
+    ),
+
+  startExecution: (
+    projectId: string,
+    body: {
+      generation_id: string;
+      run_destructive?: boolean;
+      script_ids?: string[];
+    },
+  ) =>
+    request<ExecutionTrigger>(`/executions/projects/${projectId}`, body),
+
+  downloadEvidence: async (
+    projectId: string,
+    runId: string,
+    resultId: string,
+    channel: string,
+  ) => {
+    const headers: Record<string, string> = {};
+    const apiKey = import.meta.env.VITE_API_KEY;
+    if (apiKey) headers["X-API-Key"] = apiKey;
+    const base = (import.meta.env.VITE_API_BASE_URL || "/api/v1").replace(
+      /\/$/,
+      "",
+    );
+    const response = await fetch(
+      `${base}/executions/projects/${projectId}/runs/${runId}/results/${resultId}/evidence/${channel}`,
+      { headers },
+    );
+    if (!response.ok) {
+      throw new ApiError(response.status, "Evidence download failed. Please try again.");
+    }
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${channel}`;
     link.click();
     URL.revokeObjectURL(url);
   },

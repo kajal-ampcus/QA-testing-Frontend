@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Code2, Download, FolderTree } from "lucide-react";
+import { Code2, Download, FolderTree, ArrowRight } from "lucide-react";
 import { api } from "../../api/client";
 import { useAction } from "../../hooks/useAction";
 import {
@@ -10,6 +10,7 @@ import {
   ErrorState,
   ProgressIndicator,
   StatusBadge,
+  NextAction,
 } from "../../components/ui";
 import type { AppMap, AutomationGeneration, Requirement, TestCase } from "../../types/api";
 
@@ -42,11 +43,13 @@ export default function Automation({
   tests,
   map,
   requirement,
+  onNext,
 }: {
   projectId: string;
   tests: TestCase[];
   map?: AppMap | null;
   requirement?: Requirement;
+  onNext?: () => void;
 }) {
   const rows = useMemo(
     () =>
@@ -97,7 +100,7 @@ export default function Automation({
               <h2>
                 Automation <span className="count">{eligible.length}</span>
               </h2>
-              <p>Approved cases become a reviewed Playwright suite. Nothing is executed.</p>
+              <p>Approved cases become a reviewed Playwright suite. Run it on the next step.</p>
             </div>
           </div>
           {eligible.length === 0 ? (
@@ -148,6 +151,12 @@ export default function Automation({
             >
               Generate Playwright suite
             </Button>
+            {onNext && (history.data?.generations.length ?? 0) > 0 && (
+              <Button variant="secondary" onClick={onNext}>
+                Continue to Execution
+                <ArrowRight size={15} />
+              </Button>
+            )}
           </div>
           {generate.isPending && (
             <ProgressIndicator
@@ -158,15 +167,29 @@ export default function Automation({
           {generate.error && <ErrorState error={generate.error} />}
           {opened.error && <ErrorState error={opened.error} />}
         </Card>
-        {result && <Result result={result} projectId={projectId} file={file} preview={preview} onFile={setFile} />}
+        {result && (
+          <Result
+            result={result}
+            projectId={projectId}
+            file={file}
+            preview={preview}
+            onFile={setFile}
+            onNext={onNext}
+          />
+        )}
       </div>
       <aside>
         <Card className="guide-card">
-          <div className="eyebrow">NOT EXECUTED</div>
-          <h3>Generated and reviewed — not executed</h3>
+          <div className="eyebrow">{result?.executed ? "REVIEWED AND RUNNABLE" : "REVIEWED"}</div>
+          <h3>
+            {result?.executed
+              ? "Suite generated — already executed"
+              : "Generated and reviewed — run next"}
+          </h3>
           <p>
-            The suite is static TypeScript. Download it or open it in an editor.
-            Destructive flows stay skipped until RUN_DESTRUCTIVE is true.
+            The suite is static TypeScript. Download it, open it in an editor, or
+            continue to Execution to run it against the application. Destructive
+            flows stay skipped until RUN_DESTRUCTIVE is true.
           </p>
         </Card>
         <Card>
@@ -203,12 +226,14 @@ function Result({
   file,
   preview,
   onFile,
+  onNext,
 }: {
   result: AutomationGeneration;
   projectId: string;
   file: string;
   preview?: string;
   onFile: (path: string) => void;
+  onNext?: () => void;
 }) {
   const [downloading, setDownloading] = useState(false);
   const [downloadError, setDownloadError] = useState("");
@@ -320,6 +345,14 @@ function Result({
         </div>
         <pre className="source-preview">{preview || "Select a file to preview its source."}</pre>
       </div>
+      {onNext && (
+        <NextAction
+          title="Run the suite against the application"
+          description="Execution captures pass/fail from assertions plus screenshots, video, traces, console, and network logs."
+          label="Continue to Execution"
+          onClick={onNext}
+        />
+      )}
     </Card>
   );
 }

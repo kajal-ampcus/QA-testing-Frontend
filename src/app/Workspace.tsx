@@ -26,6 +26,7 @@ const ApplicationMap = lazy(
 );
 const TestCases = lazy(() => import("../features/test-cases/TestCases"));
 const Automation = lazy(() => import("../features/automation/Automation"));
+const Execution = lazy(() => import("../features/execution/Execution"));
 const Generate = lazy(() =>
   import("../features/test-cases/TestCases").then((m) => ({
     default: m.Generate,
@@ -105,6 +106,10 @@ export default function Workspace({ id }: { id: string }) {
     queryKey: [...key, "automation"],
     queryFn: ({ signal }) => api.automation(id, signal),
   });
+  const executions = useQuery({
+    queryKey: [...key, "executions"],
+    queryFn: ({ signal }) => api.executions(id, signal),
+  });
   const mapEnabled =
     project.isSuccess &&
     (project.data.has_application_map ??
@@ -137,7 +142,9 @@ export default function Workspace({ id }: { id: string }) {
       : r.status !== "APPROVED"
         ? 1
         : ["COMPLETE", "PARTIAL"].includes(map.data?.status || "") && !running
-          ? 6
+          ? (automation.data?.generations.length ?? 0) > 0
+            ? 7
+            : 6
           : map.data
             ? 3
             : 2;
@@ -235,6 +242,7 @@ export default function Workspace({ id }: { id: string }) {
     approvals.error ||
     tests.error ||
     automation.error ||
+    executions.error ||
     map.error;
   const loading =
     project.isPending ||
@@ -242,6 +250,7 @@ export default function Workspace({ id }: { id: string }) {
     approvals.isPending ||
     tests.isPending ||
     automation.isPending ||
+    executions.isPending ||
     (mapEnabled && map.isPending);
   const currentTests =
     r && map.data
@@ -260,6 +269,7 @@ export default function Workspace({ id }: { id: string }) {
     currentTests.length > 0,
     currentTests.length > 0,
     (automation.data?.generations.length ?? 0) > 0,
+    (executions.data?.runs.length ?? 0) > 0,
   ];
   return (
     <Shell
@@ -275,6 +285,7 @@ export default function Workspace({ id }: { id: string }) {
             void approvals.refetch();
             void tests.refetch();
             void automation.refetch();
+            void executions.refetch();
             if (mapEnabled) void map.refetch();
             if (jobId) void job.refetch();
           }}
@@ -312,6 +323,7 @@ export default function Workspace({ id }: { id: string }) {
             void approvals.refetch();
             void tests.refetch();
             void automation.refetch();
+            void executions.refetch();
             if (mapEnabled) void map.refetch();
           }}
         />
@@ -470,6 +482,13 @@ export default function Workspace({ id }: { id: string }) {
                   tests={currentTests}
                   map={map.data}
                   requirement={r}
+                  onNext={() => navigateStage(7)}
+                />
+              )}{" "}
+              {stage === 7 && (
+                <Execution
+                  projectId={id}
+                  generations={automation.data?.generations || []}
                 />
               )}{" "}
               {stage === 3 && !map.data && (

@@ -305,5 +305,70 @@ export interface AutomationList {
     script_count: number;
     blocked_count: number;
     approval_required: boolean;
+    executed?: boolean;
   }[];
+}
+
+export interface ExecutionTrigger {
+  job_id: string;
+  run_id: string;
+  status: string;
+}
+
+export interface ExecutionJob {
+  job_id: string;
+  status: string;
+  run_id: string | null;
+  result: {
+    status?: string;
+    summary?: Record<string, number>;
+    error?: string;
+  } | null;
+}
+
+export interface ExecutionAssertion {
+  expected: string;
+  actual: string;
+  source: string;
+}
+
+export interface ExecutionEvidence {
+  screenshot: string | null;
+  video: string | null;
+  trace: string | null;
+  console_log: string | null;
+  network_log: string | null;
+}
+
+export interface ExecutionResult {
+  id: string;
+  automation_script_id: string | null;
+  spec_path: string;
+  status: string;
+  assertion: ExecutionAssertion;
+  evidence: ExecutionEvidence;
+  duration_ms: number | null;
+  error_message: string | null;
+}
+
+export interface ExecutionRun {
+  id: string;
+  generation_id: string;
+  job_id: string | null;
+  environment: string;
+  base_url: string | null;
+  run_destructive: boolean;
+  status: string;
+  summary: Record<string, number>;
+  log?: string | null;
+  detail?: string | null;
+  started_at: string | null;
+  finished_at: string | null;
+  created_at: string | null;
+  result_count: number;
+  results?: ExecutionResult[];
+}
+
+export interface ExecutionList {
+  runs: ExecutionRun[];
 }
