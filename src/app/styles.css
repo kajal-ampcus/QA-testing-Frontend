@@ -3484,6 +3484,13 @@ select,
   margin: 14px 0 0;
   font-size: 13px;
 }
+.execution-live {
+  width: 100%;
+  height: 560px;
+  border: 1px solid #e7eee2;
+  border-radius: 8px;
+  background: #111;
+}
 .execution-results {
   width: 100%;
   border-collapse: collapse;

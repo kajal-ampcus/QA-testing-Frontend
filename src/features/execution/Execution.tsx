@@ -230,13 +230,28 @@ export default function Execution({
           {(booting || running) && (
             <ProgressIndicator
               label="Running Playwright"
-              description="A browser window opens on this computer and walks through the site. Results appear here as each check finishes."
+              description="Chromium is shown below while the suite walks through the site. Results appear here as each check finishes."
             />
           )}
           {autoError ? <ErrorState error={autoError} /> : null}
           {job.error && <ErrorState error={job.error} />}
           {detail.error && <ErrorState error={detail.error} />}
         </Card>
+        {running && (
+          <Card>
+            <div className="card-heading">
+              <div>
+                <h2>Live browser</h2>
+                <p>Chromium on the server, following this run.</p>
+              </div>
+            </div>
+            <iframe
+              className="execution-live"
+              title="Live browser"
+              src="/live/vnc.html?autoconnect=1&resize=scale&path=live/websockify"
+            />
+          </Card>
+        )}
         {run && <RunDetail projectId={projectId} run={run} />}
       </div>
       <aside>
@@ -304,7 +319,7 @@ function RunDetail({
       </div>
       {run.detail && <p className="notice error">{run.detail}</p>}
       <p className="muted">
-        While the run is in progress, watch the browser window on this computer.
+        While the run is in progress, the live browser above follows Chromium.
         After it finishes, use video and trace to replay any step.
       </p>
       <dl className="automation-counts">

@@ -7,6 +7,12 @@ export default defineConfig(({ mode }) => {
     plugins: [react()],
     server: {
       proxy: {
+        "/live": {
+          target: env.LIVE_VIEW_PROXY_TARGET || "http://127.0.0.1:6080",
+          changeOrigin: true,
+          ws: true,
+          rewrite: (path) => path.replace(/^\/live/, ""),
+        },
         "/api": {
           target: env.API_PROXY_TARGET || "http://127.0.0.1:8000",
           changeOrigin: true,
