@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -12,6 +12,8 @@ import {
   Check,
   Command,
   FolderOpen,
+  PanelLeftClose,
+  PanelLeftOpen,
   Trash2,
 } from "lucide-react";
 import { api } from "../../api/client";
@@ -34,25 +36,50 @@ export function Shell({
   project?: string;
   action?: ReactNode;
 }) {
+  const [collapsed, setCollapsed] = useState(
+    () => localStorage.getItem("sidebar-collapsed") === "1",
+  );
+  useEffect(() => {
+    localStorage.setItem("sidebar-collapsed", collapsed ? "1" : "0");
+  }, [collapsed]);
   return (
-    <div className="shell">
-      <aside className="sidebar">
-        <Link to="/" className="brand">
-          <span className="brand-symbol">
-            a<span>↗</span>
-          </span>
-          arc<span className="brand-caption">QA WORKSPACE</span>
-        </Link>
+    <div className={collapsed ? "shell collapsed" : "shell"}>
+      <aside className={collapsed ? "sidebar collapsed" : "sidebar"}>
+        <div className="sidebar-head">
+          <Link to="/" className="brand" title="arc">
+            <span className="brand-symbol">
+              a<span>↗</span>
+            </span>
+            <span className="brand-name">
+              arc<span className="brand-caption">QA WORKSPACE</span>
+            </span>
+          </Link>
+          <button
+            type="button"
+            className="sidebar-toggle"
+            aria-expanded={!collapsed}
+            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            onClick={() => setCollapsed((open) => !open)}
+          >
+            {collapsed ? (
+              <PanelLeftOpen size={16} />
+            ) : (
+              <PanelLeftClose size={16} />
+            )}
+          </button>
+        </div>
         <div className="workspace-label">
           <div className="avatar">Q</div>
-          <div>
+          <div className="workspace-copy">
             Engineering workspace<small>AI-powered quality</small>
           </div>
         </div>
         <div className="nav-caption">WORKSPACE</div>
-        <Link className="side-link selected" to="/">
+        <Link className="side-link selected" to="/" title="Projects">
           <Layers3 size={18} />
-          Projects<span className="keycap">P</span>
+          <span>Projects</span>
+          <span className="keycap">P</span>
         </Link>
         <div className="side-journey">
           <span className="nav-caption">YOUR QA JOURNEY</span>

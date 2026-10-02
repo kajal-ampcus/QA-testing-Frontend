@@ -33,6 +33,47 @@ import { human } from "../../utils/workflow";
 import { exportCompleteExcelReport } from "./exportExcel";
 import ReviewEditor from "./ReviewEditor";
 
+function savedCoverageGaps(
+  requirement: Requirement | undefined,
+  tests: TestCase[],
+) {
+  const uncovered: string[] = [];
+  const partial: string[] = [];
+  const targets: Record<string, string[]> = {};
+  if (!requirement) return { uncovered, partial, targets };
+  const relevant = tests.filter(
+    (test) =>
+      test.requirement_id === requirement.id &&
+      test.requirement_version === requirement.version &&
+      test.status !== "OUTDATED" &&
+      test.status !== "REJECTED",
+  );
+  const categoriesByAc = new Map<string, Set<string>>();
+  for (const test of relevant) {
+    for (const acId of test.current.traceability) {
+      const categories = categoriesByAc.get(acId) ?? new Set<string>();
+      categories.add(test.current.category);
+      categoriesByAc.set(acId, categories);
+    }
+  }
+  for (const criterion of requirement.acceptance_criteria) {
+    const categories = categoriesByAc.get(criterion.id);
+    if (!categories) {
+      uncovered.push(criterion.id);
+      targets[criterion.id] = ["POSITIVE", "NEGATIVE"];
+      continue;
+    }
+    const missing = ["POSITIVE", "NEGATIVE"].filter(
+      (category) => !categories.has(category),
+    );
+    if (missing.length) {
+      partial.push(criterion.id);
+      targets[criterion.id] = missing;
+    }
+  }
+  return { uncovered, partial, targets };
+}
+
 function lines(value: string) {
   return value
     .split(/\r?\n/)
@@ -523,7 +564,7 @@ export default function TestCases({
   result?: Generation;
   completingCoverage?: boolean;
   coverageError?: unknown;
-  onCompleteCoverage?: () => void;
+  onCompleteCoverage?: (targets: Record<string, string[]>) => void;
   approvals?: Approval[];
   requirement?: Requirement;
   onNext?: () => void;
@@ -657,27 +698,30 @@ export default function TestCases({
         </div>
         {exportError && <p className="notice error">{exportError}</p>}
         {!!coverageError && <ErrorState error={coverageError} />}
-        {result &&
-          (result.uncovered_acs.length > 0 ||
-            result.partial_pairing_acs.length > 0 ||
-            result.needs_review_test_cases.length > 0 ||
-            !!result.duplicates_skipped) && (
+        {(() => {
+          const gaps = savedCoverageGaps(requirement, tests);
+          const missingCount = gaps.uncovered.length + gaps.partial.length;
+          const sessionNotes =
+            !!result &&
+            (result.needs_review_test_cases.length > 0 ||
+              !!result.duplicates_skipped);
+          if (!missingCount && !sessionNotes) return null;
+          return (
             <div className="notice">
               <strong>Review the generated drafts below</strong>
-              {result.uncovered_acs.length > 0 && (
+              {gaps.uncovered.length > 0 && (
                 <p>
-                  {result.uncovered_acs.length} acceptance criteria still have
-                  no test: {result.uncovered_acs.join(", ")}
+                  {gaps.uncovered.length} acceptance criteria still have no
+                  test: {gaps.uncovered.join(", ")}
                 </p>
               )}
-              {result.partial_pairing_acs.length > 0 && (
+              {gaps.partial.length > 0 && (
                 <p>
-                  {result.partial_pairing_acs.length} criteria need both a
-                  positive and a negative case:{" "}
-                  {result.partial_pairing_acs.join(", ")}
+                  {gaps.partial.length} criteria still need a positive or a
+                  negative case: {gaps.partial.join(", ")}
                 </p>
               )}
-              {result.needs_review_test_cases.length > 0 && (
+              {!!result?.needs_review_test_cases.length && (
                 <p>
                   {result.needs_review_test_cases.length} generated case
                   {result.needs_review_test_cases.length === 1
@@ -686,26 +730,25 @@ export default function TestCases({
                   low confidence. Edit them in the list, then approve the batch.
                 </p>
               )}
-              {!!result.duplicates_skipped && (
+              {!!result?.duplicates_skipped && (
                 <p>
                   {result.duplicates_skipped} duplicate draft
                   {result.duplicates_skipped === 1 ? " was" : "s were"} not
                   saved again.
                 </p>
               )}
-              {(result.uncovered_acs.length > 0 ||
-                result.partial_pairing_acs.length > 0) &&
-                onCompleteCoverage && (
-                  <Button
-                    onClick={onCompleteCoverage}
-                    busy={completingCoverage}
-                  >
-                    <Sparkles size={16} />
-                    Review and generate missing test cases
-                  </Button>
-                )}
+              {missingCount > 0 && onCompleteCoverage && (
+                <Button
+                  onClick={() => onCompleteCoverage(gaps.targets)}
+                  busy={completingCoverage}
+                >
+                  <Sparkles size={16} />
+                  Review and generate missing test cases
+                </Button>
+              )}
             </div>
-          )}
+          );
+        })()}
         <div className="table-toolbar">
           <label className="search">
             <Search size={16} />
