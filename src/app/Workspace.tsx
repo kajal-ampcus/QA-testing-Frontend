@@ -4,7 +4,7 @@ import { useSearchParams } from "react-router-dom";
 import { ArrowRight, Plus, RefreshCw, ExternalLink } from "lucide-react";
 import { api, ApiError } from "../api/client";
 import { useAction } from "../hooks/useAction";
-import { activeJob, nextStage, stages } from "../utils/workflow";
+import { activeJob, finishedExecution, nextStage, stages } from "../utils/workflow";
 import { Shell } from "../features/projects/Projects";
 import { WorkflowStepper } from "../components/workflow/WorkflowStepper";
 import {
@@ -27,6 +27,9 @@ const ApplicationMap = lazy(
 const TestCases = lazy(() => import("../features/test-cases/TestCases"));
 const Automation = lazy(() => import("../features/automation/Automation"));
 const Execution = lazy(() => import("../features/execution/Execution"));
+const ExecutionReport = lazy(
+  () => import("../features/report/ExecutionReport"),
+);
 const Generate = lazy(() =>
   import("../features/test-cases/TestCases").then((m) => ({
     default: m.Generate,
@@ -134,6 +137,9 @@ export default function Workspace({ id }: { id: string }) {
       : all.find((r) => r.id === requested) ||
         all.find((r) => r.status !== "APPROVED") ||
         all[0];
+  const finishedReport = (executions.data?.runs || []).some((run) =>
+    finishedExecution(run.status),
+  );
   const available = !r
     ? 0
     : r.ambiguities.length
@@ -141,9 +147,11 @@ export default function Workspace({ id }: { id: string }) {
       : r.status !== "APPROVED"
         ? 1
         : ["COMPLETE", "PARTIAL"].includes(map.data?.status || "") && !running
-          ? (automation.data?.generations.length ?? 0) > 0
-            ? 7
-            : 6
+          ? finishedReport
+            ? 8
+            : (automation.data?.generations.length ?? 0) > 0
+              ? 7
+              : 6
           : map.data
             ? 3
             : 2;
@@ -248,6 +256,7 @@ export default function Workspace({ id }: { id: string }) {
     currentTests.length > 0,
     (automation.data?.generations.length ?? 0) > 0,
     (executions.data?.runs.length ?? 0) > 0,
+    finishedReport,
   ];
   return (
     <Shell
@@ -474,8 +483,10 @@ export default function Workspace({ id }: { id: string }) {
                   projectId={id}
                   generations={automation.data?.generations || []}
                   startToken={executionStart}
+                  onNext={finishedReport ? () => navigateStage(8) : undefined}
                 />
               )}{" "}
+              {stage === 8 && <ExecutionReport projectId={id} />}{" "}
               {stage === 3 && !map.data && (
                 <Card>
                   <EmptyState

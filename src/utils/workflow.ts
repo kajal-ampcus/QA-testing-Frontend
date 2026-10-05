@@ -8,7 +8,11 @@ export const stages = [
   "Test cases",
   "Automation",
   "Execution",
+  "Report",
 ] as const;
+
+export const finishedExecution = (status?: string) =>
+  !!status && ["COMPLETED", "FAILED", "CANCELLED"].includes(status);
 export function nextStage(
   requirement?: Requirement,
   map?: AppMap | null,

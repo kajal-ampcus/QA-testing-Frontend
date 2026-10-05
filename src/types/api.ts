@@ -384,3 +384,39 @@ export interface ExecutionRun {
 export interface ExecutionList {
   runs: ExecutionRun[];
 }
+
+export interface ExecutionReportCounts {
+  total: number;
+  passed: number;
+  failed: number;
+  skipped: number;
+  error: number;
+  pass_rate: number;
+  duration_ms: number;
+}
+
+export interface ExecutionReportResult {
+  id: string;
+  test_case_code: string;
+  title: string;
+  requirement_code: string;
+  status: string;
+  expected: string;
+  actual: string;
+  duration_ms: number | null;
+  error_message: string | null;
+  evidence: string[];
+}
+
+export interface ExecutionReport {
+  run_id: string;
+  project_id: string;
+  generation_id: string;
+  environment: string;
+  base_url: string | null;
+  status: string;
+  started_at: string | null;
+  finished_at: string | null;
+  counts: ExecutionReportCounts;
+  results: ExecutionReportResult[];
+}
