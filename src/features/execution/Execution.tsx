@@ -31,10 +31,12 @@ export default function Execution({
   projectId,
   generations,
   startToken = 0,
+  onNext,
 }: {
   projectId: string;
   generations: AutomationList["generations"];
   startToken?: number;
+  onNext?: () => void;
 }) {
   const [generationId, setGenerationId] = useState(generations[0]?.generation_id || "");
   const [runDestructive, setRunDestructive] = useState(false);
@@ -224,6 +226,11 @@ export default function Execution({
                 >
                   Run suite
                 </Button>
+                {onNext && (
+                  <Button variant="secondary" onClick={onNext}>
+                    Continue to report
+                  </Button>
+                )}
               </div>
             </>
           )}

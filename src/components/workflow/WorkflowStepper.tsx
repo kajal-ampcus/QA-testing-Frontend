@@ -8,6 +8,7 @@ import {
   ListChecks,
   Code2,
   Play,
+  FileSpreadsheet,
   LockKeyhole,
 } from "lucide-react";
 import { stages } from "../../utils/workflow";
@@ -20,6 +21,7 @@ const icons = [
   ListChecks,
   Code2,
   Play,
+  FileSpreadsheet,
 ];
 export function AnimatedConnector({
   complete,

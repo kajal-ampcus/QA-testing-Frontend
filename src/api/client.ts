@@ -12,6 +12,7 @@ import type {
   AutomationList,
   ExecutionJob,
   ExecutionList,
+  ExecutionReport,
   ExecutionRun,
   ExecutionTrigger,
 } from "../types/api";
@@ -425,6 +426,13 @@ export const api = {
       signal,
     ),
 
+  executionReport: (projectId: string, runId: string, signal?: AbortSignal) =>
+    request<ExecutionReport>(
+      `/executions/projects/${projectId}/runs/${runId}/report`,
+      undefined,
+      signal,
+    ),
+
   executionJob: (jobId: string, signal?: AbortSignal) =>
     request<ExecutionJob>(
       `/executions/jobs/${encodeURIComponent(jobId)}`,
@@ -441,6 +449,44 @@ export const api = {
     },
   ) =>
     request<ExecutionTrigger>(`/executions/projects/${projectId}`, body),
+
+  evidenceUrl: (
+    projectId: string,
+    runId: string,
+    resultId: string,
+    channel: string,
+  ) => {
+    const base = (import.meta.env.VITE_API_BASE_URL || "/api/v1").replace(
+      /\/$/,
+      "",
+    );
+    const path = `${base}/executions/projects/${projectId}/runs/${runId}/results/${resultId}/evidence/${channel}`;
+    if (/^https?:\/\//.test(path)) return path;
+    return `${window.location.origin}${path.startsWith("/") ? path : `/${path}`}`;
+  },
+
+  readEvidence: async (
+    projectId: string,
+    runId: string,
+    resultId: string,
+    channel: string,
+  ) => {
+    const headers: Record<string, string> = {};
+    const apiKey = import.meta.env.VITE_API_KEY;
+    if (apiKey) headers["X-API-Key"] = apiKey;
+    const base = (import.meta.env.VITE_API_BASE_URL || "/api/v1").replace(
+      /\/$/,
+      "",
+    );
+    const response = await fetch(
+      `${base}/executions/projects/${projectId}/runs/${runId}/results/${resultId}/evidence/${channel}`,
+      { headers },
+    );
+    if (!response.ok) {
+      throw new ApiError(response.status, "Evidence download failed. Please try again.");
+    }
+    return response.text();
+  },
 
   downloadEvidence: async (
     projectId: string,

@@ -3,10 +3,11 @@ import { test } from "node:test";
 import { nextStage, stages } from "./workflow.ts";
 
 test("automation follows test cases", () => {
-  assert.equal(stages.at(-1), "Execution");
+  assert.equal(stages.at(-1), "Report");
   assert.equal(stages.indexOf("Automation"), stages.indexOf("Test cases") + 1);
   assert.equal(stages.indexOf("Execution"), stages.indexOf("Automation") + 1);
-  assert.equal(stages.length, 8);
+  assert.equal(stages.indexOf("Report"), stages.indexOf("Execution") + 1);
+  assert.equal(stages.length, 9);
   const between = stages.slice(
     stages.indexOf("Test cases") + 1,
     stages.indexOf("Automation"),
