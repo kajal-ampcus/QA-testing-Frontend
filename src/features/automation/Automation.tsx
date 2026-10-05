@@ -1,6 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Code2, Download, FolderTree, ArrowRight } from "lucide-react";
+import {
+  ArrowRight,
+  ChevronRight,
+  Code2,
+  Download,
+  File,
+  Folder,
+  FolderOpen,
+  FolderTree,
+} from "lucide-react";
 
 import { api } from "../../api/client";
 import { useAction } from "../../hooks/useAction";
@@ -391,6 +400,143 @@ function SuiteActions({
 }
 
 
+type SuiteFile = { name: string; path: string };
+type SuiteFolder = {
+  name: string;
+  path: string;
+  folders: SuiteFolder[];
+  files: SuiteFile[];
+};
+
+function suiteTree(paths: string[]): SuiteFolder {
+  const root: SuiteFolder = { name: "", path: "", folders: [], files: [] };
+  for (const path of paths) {
+    const parts = path.replaceAll("\\", "/").split("/").filter(Boolean);
+    let cursor = root;
+    for (let index = 0; index < parts.length - 1; index += 1) {
+      const name = parts[index];
+      const folderPath = parts.slice(0, index + 1).join("/");
+      let next = cursor.folders.find((item) => item.name === name);
+      if (!next) {
+        next = { name, path: folderPath, folders: [], files: [] };
+        cursor.folders.push(next);
+      }
+      cursor = next;
+    }
+    const name = parts[parts.length - 1];
+    if (name) cursor.files.push({ name, path });
+  }
+  const sortFolder = (folder: SuiteFolder) => {
+    folder.folders.sort((left, right) => left.name.localeCompare(right.name));
+    folder.files.sort((left, right) => left.name.localeCompare(right.name));
+    folder.folders.forEach(sortFolder);
+  };
+  sortFolder(root);
+  return root;
+}
+
+function FolderRows({
+  folder,
+  depth,
+  file,
+  onFile,
+  closed,
+  toggle,
+}: {
+  folder: SuiteFolder;
+  depth: number;
+  file: string;
+  onFile: (path: string) => void;
+  closed: Set<string>;
+  toggle: (path: string) => void;
+}) {
+  return (
+    <>
+      {folder.folders.map((child) => {
+        const open = !closed.has(child.path);
+        return (
+          <li key={child.path}>
+            <button
+              type="button"
+              className="file-node folder"
+              aria-expanded={open}
+              onClick={() => toggle(child.path)}
+              style={{ paddingLeft: 8 + depth * 14 }}
+            >
+              <ChevronRight size={13} className={open ? "chevron open" : "chevron"} />
+              {open ? <FolderOpen size={14} /> : <Folder size={14} />}
+              <span>{child.name}</span>
+            </button>
+            {open && (
+              <ul>
+                <FolderRows
+                  folder={child}
+                  depth={depth + 1}
+                  file={file}
+                  onFile={onFile}
+                  closed={closed}
+                  toggle={toggle}
+                />
+              </ul>
+            )}
+          </li>
+        );
+      })}
+      {folder.files.map((item) => (
+        <li key={item.path}>
+          <button
+            type="button"
+            className="file-node"
+            aria-current={file === item.path ? "true" : undefined}
+            title={item.path}
+            onClick={() => onFile(item.path)}
+            style={{ paddingLeft: 26 + depth * 14 }}
+          >
+            <File size={13} />
+            <span>{item.name}</span>
+          </button>
+        </li>
+      ))}
+    </>
+  );
+}
+
+function SuiteFiles({
+  paths,
+  file,
+  onFile,
+}: {
+  paths: string[];
+  file: string;
+  onFile: (path: string) => void;
+}) {
+  const tree = useMemo(() => suiteTree(paths), [paths]);
+  const [closed, setClosed] = useState<Set<string>>(() => new Set());
+  useEffect(() => {
+    setClosed(new Set());
+  }, [paths]);
+  const toggle = (path: string) => {
+    setClosed((current) => {
+      const next = new Set(current);
+      if (next.has(path)) next.delete(path);
+      else next.add(path);
+      return next;
+    });
+  };
+  return (
+    <ul className="file-tree">
+      <FolderRows
+        folder={tree}
+        depth={0}
+        file={file}
+        onFile={onFile}
+        closed={closed}
+        toggle={toggle}
+      />
+    </ul>
+  );
+}
+
 /**
  * Displays the generated automation result.
  *
@@ -504,24 +650,12 @@ function Result({
       </p>
 
       <div className="automation-files">
-        <div>
-          <h3>
-            <FolderTree size={14} /> Files
-          </h3>
-
-          <ul className="file-tree">
-            {result.file_tree.map((path) => (
-              <li key={path}>
-                <button
-                  type="button"
-                  onClick={() => onFile(path)}
-                  aria-current={file === path}
-                >
-                  {path}
-                </button>
-              </li>
-            ))}
-          </ul>
+        <div className="suite-explorer">
+          <div className="suite-explorer-head">
+            <FolderTree size={14} />
+            Explorer
+          </div>
+          <SuiteFiles paths={result.file_tree} file={file} onFile={onFile} />
         </div>
 
         <pre className="source-preview">

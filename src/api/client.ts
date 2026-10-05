@@ -446,6 +446,21 @@ export const api = {
       signal,
     ),
 
+  executionLive: (signal?: AbortSignal) =>
+    request<{ project_id: string | null; run_id: string | null }>(
+      "/executions/live",
+      undefined,
+      signal,
+    ),
+
+  stopExecution: (projectId: string) =>
+    request<{ job_id: string; status: string }>(
+      `/executions/projects/${projectId}`,
+      undefined,
+      undefined,
+      "DELETE",
+    ),
+
   startExecution: (
     projectId: string,
     body: {
