@@ -8,7 +8,7 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview --port 3000",
     "test": "playwright test",
-    "test:unit": "node --experimental-strip-types --test src/features/application-map/graphLayout.test.ts src/utils/workflow.test.ts",
+    "test:unit": "node --experimental-strip-types --test src/features/application-map/graphLayout.test.ts src/utils/workflow.test.ts src/features/report/dashboardModel.test.ts",
     "format": "prettier --write src tests *.ts *.json index.html README.md",
     "format:check": "prettier --check src tests *.ts *.json index.html README.md"
   },

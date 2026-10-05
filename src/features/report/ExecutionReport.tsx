@@ -11,6 +11,7 @@ import {
   LoadingState,
   StatusBadge,
 } from "../../components/ui";
+import { AnalyticalDashboard } from "./AnalyticalDashboard";
 import {
   durationLabel,
   exportExecutionExcelReport,
@@ -86,36 +87,12 @@ export default function ExecutionReport({ projectId }: { projectId: string }) {
                 <span className="muted">{data.environment}</span>
                 {data.base_url && <span className="muted">{data.base_url}</span>}
               </div>
-              <dl className="automation-counts">
-                <div>
-                  <dt>Total</dt>
-                  <dd>{data.counts.total}</dd>
-                </div>
-                <div>
-                  <dt>Passed</dt>
-                  <dd>{data.counts.passed}</dd>
-                </div>
-                <div>
-                  <dt>Failed</dt>
-                  <dd>{data.counts.failed}</dd>
-                </div>
-                <div>
-                  <dt>Skipped</dt>
-                  <dd>{data.counts.skipped}</dd>
-                </div>
-                <div>
-                  <dt>Error</dt>
-                  <dd>{data.counts.error}</dd>
-                </div>
-                <div>
-                  <dt>Pass rate</dt>
-                  <dd>{data.counts.pass_rate}%</dd>
-                </div>
-                <div>
-                  <dt>Duration</dt>
-                  <dd>{durationLabel(data.counts.duration_ms) || "0 ms"}</dd>
-                </div>
-              </dl>
+              <AnalyticalDashboard
+                report={data}
+                runs={finished}
+                activeRunId={runId}
+                suiteDetail={finished.find((run) => run.id === runId)?.detail || ""}
+              />
               <div className="actions">
                 <Button
                   variant="secondary"

@@ -36,7 +36,7 @@ export function Button({
 export function StatusBadge({ status }: { status: string }) {
   return (
     <span
-      className={`badge ${["APPROVED", "COMPLETE", "SUCCESS", "PASSED"].includes(status.toUpperCase()) ? "good" : /FAIL|REJECT|BLOCK|ERROR/.test(status.toUpperCase()) ? "bad" : /PENDING|CLARIFICATION|PARTIAL|REVIEW|QUEUED|RUNNING|SKIPPED/.test(status.toUpperCase()) ? "warn" : ""}`}
+      className={`badge ${["APPROVED", "COMPLETE", "SUCCESS", "PASSED"].includes(status.toUpperCase()) ? "good" : /FAIL|REJECT|BLOCK|ERROR|CANCEL/.test(status.toUpperCase()) ? "bad" : /PENDING|CLARIFICATION|PARTIAL|REVIEW|QUEUED|RUNNING|SKIPPED/.test(status.toUpperCase()) ? "warn" : ""}`}
     >
       <i />
       {human(status)}

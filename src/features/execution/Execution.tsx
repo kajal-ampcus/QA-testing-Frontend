@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Play, Download } from "lucide-react";
+import { Play, Download, Square } from "lucide-react";
 import { api, ApiError } from "../../api/client";
 import { activeJob } from "../../utils/workflow";
 import {
@@ -30,12 +30,10 @@ const startingSuites = new Set<string>();
 export default function Execution({
   projectId,
   generations,
-  startToken = 0,
   onNext,
 }: {
   projectId: string;
   generations: AutomationList["generations"];
-  startToken?: number;
   onNext?: () => void;
 }) {
   const [generationId, setGenerationId] = useState(generations[0]?.generation_id || "");
@@ -43,12 +41,23 @@ export default function Execution({
   const [jobId, setJobId] = useState("");
   const [openedId, setOpenedId] = useState<string | null>(null);
   const [booting, setBooting] = useState(false);
+  const [stopping, setStopping] = useState(false);
   const [autoError, setAutoError] = useState<unknown>(null);
-  const handledToken = useRef<number | null>(null);
   const client = useQueryClient();
   const history = useQuery({
     queryKey: ["workspace", projectId, "executions"],
     queryFn: ({ signal }) => api.executions(projectId, signal),
+    refetchInterval: (query) =>
+      query.state.data?.runs.some(
+        (item) => item.status === "QUEUED" || item.status === "RUNNING",
+      )
+        ? 2000
+        : false,
+  });
+  const liveOwner = useQuery({
+    queryKey: ["execution-live-owner"],
+    queryFn: ({ signal }) => api.executionLive(signal),
+    refetchInterval: 2000,
   });
   const job = useQuery({
     queryKey: ["workspace", projectId, "execution-job", jobId],
@@ -103,10 +112,37 @@ export default function Execution({
       setBooting(false);
     }
   };
+  const stopRun = async () => {
+    setStopping(true);
+    setAutoError(null);
+    try {
+      await api.stopExecution(projectId);
+      setJobId("");
+      await client.invalidateQueries({ queryKey: ["workspace", projectId, "executions"] });
+      await client.invalidateQueries({ queryKey: ["workspace", projectId, "execution-job"] });
+      await client.invalidateQueries({ queryKey: ["workspace", projectId, "execution-run"] });
+      await client.invalidateQueries({ queryKey: ["execution-live-owner"] });
+    } catch (err: unknown) {
+      setAutoError(err);
+    } finally {
+      setStopping(false);
+    }
+  };
   useEffect(() => {
-    if (handledToken.current === startToken) return;
-    if (!generationId || history.isPending) return;
-    handledToken.current = startToken;
+    setJobId("");
+    setOpenedId(null);
+    setAutoError(null);
+    setGenerationId(generations[0]?.generation_id || "");
+  }, [projectId]);
+  useEffect(() => {
+    const first = generations[0]?.generation_id;
+    if (!first) return;
+    setGenerationId((current) =>
+      generations.some((item) => item.generation_id === current) ? current : first,
+    );
+  }, [generations]);
+  useEffect(() => {
+    if (history.isPending) return;
     const raw = sessionStorage.getItem(`execution-job:${projectId}`);
     let saved: { job_id?: string; run_id?: string; generation_id?: string } | null = null;
     if (raw) {
@@ -117,42 +153,30 @@ export default function Execution({
         saved = null;
       }
     }
-    const generation = saved?.generation_id || generationId;
     const live = history.data?.runs.find(
       (item) =>
-        item.generation_id === generation &&
-        (item.status === "QUEUED" || item.status === "RUNNING") &&
-        item.job_id,
+        (item.status === "QUEUED" || item.status === "RUNNING") && item.job_id,
     );
     if (live?.job_id) {
-      if (saved?.generation_id) setGenerationId(saved.generation_id);
+      if (live.generation_id) setGenerationId(live.generation_id);
       setJobId(live.job_id);
-      setOpenedId(live.id);
+      setOpenedId((current) => current || live.id);
       return;
     }
-    if (saved?.job_id) {
-      const savedJobId = saved.job_id;
-      const savedRunId = saved.run_id;
-      const savedGeneration = saved.generation_id;
-      void api
-        .executionJob(savedJobId)
-        .then((job) => {
-          if (activeJob(job.status)) {
-            if (savedGeneration) setGenerationId(savedGeneration);
-            setJobId(savedJobId);
-            if (savedRunId) setOpenedId(savedRunId);
-            return;
-          }
-          if (savedGeneration) setGenerationId(savedGeneration);
-          if (savedRunId) setOpenedId(savedRunId);
-        })
-        .catch(() => {
-          if (savedGeneration) setGenerationId(savedGeneration);
-          if (savedRunId) setOpenedId(savedRunId);
-        });
-      return;
-    }
-  }, [startToken, projectId, generationId, history.isPending, history.data, client]);
+    if (!saved?.job_id) return;
+    const savedJobId = saved.job_id;
+    const savedRunId = saved.run_id;
+    const savedGeneration = saved.generation_id;
+    void api
+      .executionJob(savedJobId)
+      .then((job) => {
+        if (!activeJob(job.status)) return;
+        if (savedGeneration) setGenerationId(savedGeneration);
+        setJobId(savedJobId);
+        if (savedRunId) setOpenedId(savedRunId);
+      })
+      .catch(() => undefined);
+  }, [projectId, history.isPending, history.data]);
   const selectedId =
     openedId || job.data?.run_id || (booting ? "" : history.data?.runs[0]?.id || "");
   const detail = useQuery({
@@ -165,6 +189,11 @@ export default function Execution({
   const canDestroy =
     selected?.risk_level === "DESTRUCTIVE" && selected.review_status === "APPROVED";
   const run = detail.data;
+  const liveRun = history.data?.runs.find(
+    (item) => item.status === "QUEUED" || item.status === "RUNNING",
+  );
+  const showLive = liveOwner.data?.project_id === projectId;
+  const projectBusy = booting || running || !!liveRun;
 
   return (
     <div className="two-column">
@@ -222,11 +251,22 @@ export default function Execution({
               <div className="actions">
                 <Button
                   busy={booting || running}
-                  disabled={!generationId || booting || running}
+                  disabled={!generationId || projectBusy}
                   onClick={() => void beginRun(generationId, canDestroy && runDestructive)}
                 >
                   Run suite
                 </Button>
+                {projectBusy && (
+                  <Button
+                    type="button"
+                    className="danger"
+                    busy={stopping}
+                    onClick={() => void stopRun()}
+                  >
+                    <Square size={14} />
+                    Stop execution
+                  </Button>
+                )}
                 {onNext && (
                   <Button variant="secondary" onClick={onNext}>
                     Continue to report
@@ -237,20 +277,24 @@ export default function Execution({
           )}
           {(booting || running) && (
             <ProgressIndicator
-              label="Running Playwright"
-              description="Chromium is shown below while the suite walks through the site. Results appear here as each check finishes."
+              label={showLive ? "Running Playwright" : "Execution queued"}
+              description={
+                showLive
+                  ? "Chromium for this project is shown below. Results appear here as each check finishes."
+                  : "This project is waiting. The live browser appears here only while this project is executing."
+              }
             />
           )}
           {autoError ? <ErrorState error={autoError} /> : null}
           {job.error && <ErrorState error={job.error} />}
           {detail.error && <ErrorState error={detail.error} />}
         </Card>
-        {running && (
+        {showLive && (
           <Card>
             <div className="card-heading">
               <div>
                 <h2>Live browser</h2>
-                <p>Chromium on the server, following this run.</p>
+                <p>Chromium for this project, following this run.</p>
               </div>
             </div>
             <iframe
