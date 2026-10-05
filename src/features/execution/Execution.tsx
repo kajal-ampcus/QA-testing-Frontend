@@ -179,11 +179,14 @@ export default function Execution({
   }, [projectId, history.isPending, history.data]);
   const selectedId =
     openedId || job.data?.run_id || (booting ? "" : history.data?.runs[0]?.id || "");
+  const suiteRunning = (history.data?.runs ?? []).some(
+    (item) => item.status === "QUEUED" || item.status === "RUNNING",
+  );
   const detail = useQuery({
     queryKey: ["workspace", projectId, "execution-run", selectedId],
     queryFn: ({ signal }) => api.executionRun(projectId, selectedId, signal),
     enabled: !!selectedId,
-    refetchInterval: running ? 2000 : false,
+    refetchInterval: running || suiteRunning ? 2000 : false,
   });
   const selected = generations.find((item) => item.generation_id === generationId);
   const canDestroy =
@@ -193,6 +196,12 @@ export default function Execution({
     (item) => item.status === "QUEUED" || item.status === "RUNNING",
   );
   const showLive = liveOwner.data?.project_id === projectId;
+  const activityLines = (showLive ? liveOwner.data?.activity || "" : "")
+    .replaceAll("\r", "\n")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const currentStep = activityLines.at(-1) || "";
   const projectBusy = booting || running || !!liveRun;
 
   return (
@@ -255,7 +264,7 @@ export default function Execution({
                   disabled={!generationId || projectBusy}
                   onClick={() => void beginRun(generationId, canDestroy && runDestructive)}
                 >
-                  Run suite
+                  {(history.data?.runs.length ?? 0) > 0 ? "Run again" : "Run suite"}
                 </Button>
                 {projectBusy && (
                   <Button
@@ -276,12 +285,13 @@ export default function Execution({
               </div>
             </>
           )}
-          {(booting || running) && (
+          {projectBusy && (
             <ProgressIndicator
               label={showLive ? "Running Playwright" : "Execution queued"}
               description={
                 showLive
-                  ? "Chromium for this project is shown below. Results appear here as each check finishes."
+                  ? currentStep ||
+                    "Playwright is running. The test name appears under the live browser."
                   : "This project is waiting. The live browser appears here only while this project is executing."
               }
             />
@@ -298,6 +308,13 @@ export default function Execution({
                 <p>Chromium for this project, following this run.</p>
               </div>
             </div>
+            <div className="execution-now">
+              <span>Now</span>
+              <strong>{currentStep || "Starting the suite"}</strong>
+            </div>
+            {activityLines.length > 0 && (
+              <pre className="execution-activity">{activityLines.slice(-12).join("\n")}</pre>
+            )}
             <iframe
               className="execution-live"
               title="Live browser"
@@ -372,8 +389,9 @@ function RunDetail({
       </div>
       {run.detail && <p className="notice error">{run.detail}</p>}
       <p className="muted">
-        While the run is in progress, the live browser above follows Chromium.
-        After it finishes, use video and trace to replay any step.
+        {run.status === "RUNNING" || run.status === "QUEUED"
+          ? "Finished tests are listed below as soon as each one completes."
+          : "Use video and trace to replay any step."}
       </p>
       <dl className="automation-counts">
         <div>
@@ -395,7 +413,11 @@ function RunDetail({
       </dl>
       {run.log && <pre className="source-preview">{run.log}</pre>}
       {results.length === 0 ? (
-        <p className="muted">Results appear when the worker finishes.</p>
+        <p className="muted">
+          {run.status === "RUNNING" || run.status === "QUEUED"
+            ? "Waiting for the first test to finish."
+            : "This run has no test results."}
+        </p>
       ) : (
         <div className="table-scroll">
           <table className="execution-results">

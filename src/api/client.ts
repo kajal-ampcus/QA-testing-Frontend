@@ -448,7 +448,7 @@ export const api = {
     ),
 
   executionLive: (signal?: AbortSignal) =>
-    request<{ project_id: string | null; run_id: string | null }>(
+    request<{ project_id: string | null; run_id: string | null; activity?: string }>(
       "/executions/live",
       undefined,
       signal,
@@ -543,7 +543,7 @@ export const api = {
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `${channel}`;
+    link.download = channel;
     link.click();
     URL.revokeObjectURL(url);
   },

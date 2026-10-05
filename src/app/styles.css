@@ -3675,6 +3675,38 @@ select,
   margin: 14px 0 0;
   font-size: 13px;
 }
+.execution-now {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  margin: 0 0 10px;
+  font-size: 14px;
+}
+.execution-now span {
+  flex: none;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #277456;
+  font-weight: 700;
+}
+.execution-now strong {
+  min-width: 0;
+  font-weight: 650;
+  color: #242c29;
+}
+.execution-activity {
+  margin: 0 0 12px;
+  max-height: 148px;
+  overflow: auto;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #f4f7f2;
+  color: #242c29;
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
 .execution-live {
   width: 100%;
   height: 560px;
