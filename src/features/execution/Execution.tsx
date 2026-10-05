@@ -206,8 +206,9 @@ export default function Execution({
             <div>
               <h2>Execution</h2>
               <p>
-                After the suite is generated, this step runs that Playwright code
-                on the server. Run suite starts it again.
+                After the suite is generated, this step runs that Playwright code,
+                including edits saved in the suite folder. The run after new
+                cases are added covers only those new specs.
               </p>
             </div>
           </div>

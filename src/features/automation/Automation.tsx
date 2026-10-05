@@ -37,6 +37,84 @@ const STACKS: Record<string, string[]> = {
 };
 
 
+function LoginAccount({ projectId }: { projectId: string }) {
+  const accounts = useQuery({
+    queryKey: ["workspace", projectId, "accounts"],
+    queryFn: ({ signal }) => api.accounts(projectId, signal),
+  });
+  const account = accounts.data?.find((item) => item.is_default) ?? accounts.data?.[0];
+  const [open, setOpen] = useState(false);
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const save = useAction(
+    projectId,
+    () =>
+      account
+        ? api.updateAccount(projectId, account.credential_ref, {
+            role_name: account.role || account.label || "Default",
+            username,
+            password,
+            is_default: true,
+          })
+        : api.saveAccount(projectId, {
+            role_name: "Default",
+            username,
+            password,
+            is_default: true,
+          }),
+    () => {
+      setUsername("");
+      setPassword("");
+      setOpen(false);
+    },
+  );
+  return (
+    <div className="automation-account">
+      <p>
+        {account
+          ? `Using the discovery account ${account.label} (${account.role}). The password stays in encrypted storage and is not written into the Playwright files.`
+          : "No discovery account is saved yet. Add the login here and it will be used for generation and execution."}
+      </p>
+      {!open ? (
+        <div className="actions">
+          <Button variant="secondary" onClick={() => setOpen(true)}>
+            {account ? "Edit login" : "Add login"}
+          </Button>
+        </div>
+      ) : (
+        <>
+          <label className="field">
+            <span>Username</span>
+            <input value={username} onChange={(event) => setUsername(event.target.value)} autoComplete="off" />
+          </label>
+          <label className="field">
+            <span>Password</span>
+            <input
+              type="password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              autoComplete="new-password"
+            />
+          </label>
+          <div className="actions">
+            <Button
+              busy={save.isPending}
+              disabled={!username.trim() || !password}
+              onClick={() => save.mutate(undefined)}
+            >
+              Save login
+            </Button>
+            <Button variant="secondary" onClick={() => setOpen(false)}>
+              Cancel
+            </Button>
+          </div>
+          {save.error && <ErrorState error={save.error} />}
+        </>
+      )}
+    </div>
+  );
+}
+
 function ineligibleReason(
   test: TestCase,
   requirement?: Requirement,
@@ -119,7 +197,8 @@ export default function Automation({
     queryKey: ["workspace", projectId, "automation", openedId],
     queryFn: ({ signal }) =>
       api.automationGeneration(projectId, openedId || "", signal),
-    enabled: !!openedId && openedId !== generate.data?.generation_id,
+    enabled: !!openedId,
+    refetchInterval: 3000,
   });
 
   const latestId = history.data?.generations[0]?.generation_id ?? null;
@@ -137,9 +216,11 @@ export default function Automation({
   }, [latestId, openedId]);
 
   const result =
-    generate.data && generate.data.generation_id === openedId
-      ? generate.data
-      : opened.data;
+    opened.data && opened.data.generation_id === openedId
+      ? opened.data
+      : generate.data && generate.data.generation_id === openedId
+        ? generate.data
+        : opened.data;
 
   const preview = result?.sources.find(
     (item) => item.path === file,
@@ -173,6 +254,7 @@ export default function Automation({
               </p>
             </div>
           </div>
+          <LoginAccount projectId={projectId} />
 
           {eligible.length === 0 ? (
             <EmptyState
@@ -294,17 +376,6 @@ export default function Automation({
             file={file}
             preview={preview}
             onFile={setFile}
-            onApproved={(data) => {
-              sessionStorage.setItem(
-                `execution-job:${projectId}`,
-                JSON.stringify({
-                  job_id: data.job_id,
-                  run_id: data.run_id,
-                  generation_id: result.generation_id,
-                }),
-              );
-              onNext?.();
-            }}
           />
         )}
       </div>
@@ -375,39 +446,16 @@ export default function Automation({
 function SuiteActions({
   projectId,
   result,
-  onApproved,
 }: {
   projectId: string;
   result: AutomationGeneration;
-  onApproved?: (data: { job_id: string; run_id: string }) => void;
 }) {
   const [downloading, setDownloading] = useState(false);
-  const [approving, setApproving] = useState(false);
   const [downloadError, setDownloadError] = useState("");
 
   return (
     <>
       <div className="actions">
-        <Button
-          busy={approving}
-          onClick={() => {
-            setDownloadError("");
-            setApproving(true);
-            void api
-              .approveAutomation(projectId, result.generation_id)
-              .then((data) => onApproved?.(data))
-              .catch((error: unknown) => {
-                setDownloadError(
-                  error instanceof Error
-                    ? error.message
-                    : "Approval failed.",
-                );
-              })
-              .finally(() => setApproving(false));
-          }}
-        >
-          Approve and run
-        </Button>
         <Button
           variant="secondary"
           busy={downloading}
@@ -599,25 +647,19 @@ function Result({
   file,
   preview,
   onFile,
-  onApproved,
 }: {
   projectId: string;
   result: AutomationGeneration;
   file: string;
   preview?: string;
   onFile: (path: string) => void;
-  onApproved?: (data: { job_id: string; run_id: string }) => void;
 }) {
   return (
     <Card>
       <div className="automation-result-head">
         <p className="automation-banner">{result.label}</p>
 
-        <SuiteActions
-          projectId={projectId}
-          result={result}
-          onApproved={onApproved}
-        />
+        <SuiteActions projectId={projectId} result={result} />
       </div>
 
       <div className="automation-status">

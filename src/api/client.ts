@@ -399,12 +399,6 @@ export const api = {
       framework,
     }),
 
-  approveAutomation: (projectId: string, generationId: string) =>
-    request<ExecutionTrigger>(
-      `/automation/projects/${projectId}/generations/${generationId}/approve`,
-      {},
-    ),
-
   downloadAutomation: async (projectId: string, generationId: string) => {
     const headers: Record<string, string> = {};
     const apiKey = import.meta.env.VITE_API_KEY;
