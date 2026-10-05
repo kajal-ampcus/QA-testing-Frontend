@@ -288,6 +288,8 @@ export interface AutomationGeneration {
   approval_ids: string[];
   verification: AutomationVerification;
   download_url: string;
+  language?: string;
+  framework?: string;
   vscode_url: string | null;
   cursor_url: string | null;
   executed: boolean;

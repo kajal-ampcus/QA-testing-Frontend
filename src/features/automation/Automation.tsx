@@ -21,6 +21,12 @@ import type {
   TestCase,
 } from "../../types/api";
 
+const STACKS: Record<string, string[]> = {
+  typescript: ["playwright", "selenium"],
+  python: ["playwright", "selenium"],
+  java: ["playwright", "selenium"],
+};
+
 
 function ineligibleReason(
   test: TestCase,
@@ -82,10 +88,14 @@ export default function Automation({
 
   const [file, setFile] = useState<string>("");
   const [openedId, setOpenedId] = useState<string | null>(null);
+  const [language, setLanguage] = useState("typescript");
+  const [framework, setFramework] = useState("playwright");
+  const frameworks = STACKS[language] ?? STACKS.typescript;
 
   const generate = useAction(
     projectId,
-    (ids: string[]) => api.generateAutomation(projectId, ids),
+    (body: { ids: string[]; language: string; framework: string }) =>
+      api.generateAutomation(projectId, body.ids, body.language, body.framework),
     (data) => {
       setOpenedId(data.generation_id);
     },
@@ -149,8 +159,8 @@ export default function Automation({
               </h2>
 
               <p>
-                Approved cases become a reviewed Playwright suite. Run it on
-                the next step.
+                Choose a language and framework, then turn approved cases
+                into a suite you can review before it runs.
               </p>
             </div>
           </div>
@@ -201,13 +211,52 @@ export default function Automation({
             </div>
           )}
 
+          <div className="stack-choice">
+            <label className="field">
+              <span>Language</span>
+              <select
+                value={language}
+                onChange={(event) => {
+                  const next = event.target.value;
+                  setLanguage(next);
+                  const options = STACKS[next] ?? [];
+                  setFramework(options[0] ?? "");
+                }}
+              >
+                <option value="typescript">TypeScript</option>
+                <option value="python">Python</option>
+                <option value="java">Java</option>
+              </select>
+            </label>
+            <label className="field">
+              <span>Framework</span>
+              <select
+                value={framework}
+                onChange={(event) => setFramework(event.target.value)}
+              >
+                {frameworks.map((item) => (
+                  <option key={item} value={item}>
+                    {item === "playwright" ? "Playwright" : "Selenium"}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <p className="muted">
+            Playwright and Selenium are available for every language.
+            TypeScript with Playwright is the suite this app can write and
+            run. The other pairs stay closed until a writer exists.
+          </p>
+
           <div className="actions">
             <Button
               busy={generate.isPending}
-              disabled={!selected.length}
-              onClick={() => generate.mutate(selected)}
+              disabled={!selected.length || !framework}
+              onClick={() =>
+                generate.mutate({ ids: selected, language, framework })
+              }
             >
-              Generate Playwright suite
+              Generate suite
             </Button>
 
             {onNext && (history.data?.generations.length ?? 0) > 0 && (
@@ -221,7 +270,7 @@ export default function Automation({
           {generate.isPending && (
             <ProgressIndicator
               label="Writing the suite"
-              description="The server writes the Playwright code and leaves it here for review."
+              description="The server writes the suite and leaves it here for review."
             />
           )}
 
@@ -429,6 +478,9 @@ function Result({
         <StatusBadge status={result.review_status} />
         <StatusBadge status={result.risk_level} />
         <StatusBadge status={result.verification.status} />
+        <span className="muted">
+          {(result.language ?? "typescript")} · {(result.framework ?? "playwright")}
+        </span>
 
         {result.approval_required && (
           <span className="muted">
@@ -530,8 +582,10 @@ function Result({
       </div>
 
       <p className="muted">
-        Review the files above, then approve the suite. Execution starts
-        after approval and runs every script in this generation.
+        {(result.language ?? "typescript") === "typescript" &&
+        (result.framework ?? "playwright") === "playwright"
+          ? "Review the files above, then approve the suite. Execution starts after approval and runs every script in this generation."
+          : "Review and download this suite. Execution is not available for this language and framework yet."}
       </p>
     </Card>
   );

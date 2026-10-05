@@ -3497,6 +3497,15 @@ select,
   letter-spacing: -0.2px;
   margin: 0;
 }
+.stack-choice {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 8px;
+}
+.stack-choice .field {
+  margin-top: 0;
+}
 .automation-result-head {
   display: flex;
   align-items: center;

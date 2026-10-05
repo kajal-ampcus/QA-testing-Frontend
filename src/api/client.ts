@@ -387,9 +387,16 @@ export const api = {
       signal,
     ),
 
-  generateAutomation: (projectId: string, testCaseIds: string[]) =>
+  generateAutomation: (
+    projectId: string,
+    testCaseIds: string[],
+    language: string,
+    framework: string,
+  ) =>
     request<AutomationGeneration>(`/automation/projects/${projectId}/generate`, {
       test_case_ids: testCaseIds,
+      language,
+      framework,
     }),
 
   approveAutomation: (projectId: string, generationId: string) =>
@@ -494,7 +501,7 @@ export const api = {
     return response.text();
   },
 
-  downloadEvidence: async (
+  fetchEvidence: async (
     projectId: string,
     runId: string,
     resultId: string,
