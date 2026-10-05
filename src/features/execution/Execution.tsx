@@ -141,14 +141,15 @@ export default function Execution({
             if (savedRunId) setOpenedId(savedRunId);
             return;
           }
-          void beginRun(generation);
+          if (savedGeneration) setGenerationId(savedGeneration);
+          if (savedRunId) setOpenedId(savedRunId);
         })
         .catch(() => {
-          void beginRun(generation);
+          if (savedGeneration) setGenerationId(savedGeneration);
+          if (savedRunId) setOpenedId(savedRunId);
         });
       return;
     }
-    void beginRun(generation);
   }, [startToken, projectId, generationId, history.isPending, history.data, client]);
   const selectedId =
     openedId || job.data?.run_id || (booting ? "" : history.data?.runs[0]?.id || "");
@@ -359,7 +360,29 @@ function RunDetail({
               {results.map((result) => (
                 <tr key={result.id}>
                   <td>
-                    <strong>{result.spec_path}</strong>
+                    <strong>{result.title || result.spec_path}</strong>
+                    {result.title && (
+                      <small className="muted">{result.spec_path}</small>
+                    )}
+                    {result.category && (
+                      <small className={`category ${result.category.toLowerCase()}`}>
+                        {result.category.replaceAll("_", " ")}
+                      </small>
+                    )}
+                    {(result.inputs?.length ?? 0) > 0 && (
+                      <ul className="execution-inputs">
+                        {result.inputs?.map((field) => (
+                          <li key={`${result.id}-${field.name}`}>
+                            <span>{field.name}</span>
+                            <code>{field.value || "empty"}</code>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    {result.cause && <small>{result.cause}</small>}
+                    {result.recommendation && (
+                      <small className="muted">{result.recommendation}</small>
+                    )}
                     {result.error_message && (
                       <small className="muted">{result.error_message}</small>
                     )}
@@ -387,6 +410,8 @@ function RunDetail({
   );
 }
 
+const PREVIEWABLE = new Set(["screenshot", "video", "console_log", "network_log"]);
+
 function EvidenceLinks({
   projectId,
   runId,
@@ -399,29 +424,76 @@ function EvidenceLinks({
   evidence: ExecutionEvidence;
 }) {
   const [busy, setBusy] = useState<string>("");
+  const [preview, setPreview] = useState<{
+    channel: string;
+    url: string;
+    text: string;
+  } | null>(null);
   const available = CHANNELS.filter((channel) => evidence[channel]);
   if (!available.length) {
     return <span className="muted">None</span>;
   }
+  const openPreview = (channel: string) => {
+    setBusy(channel);
+    void api
+      .fetchEvidence(projectId, runId, resultId, channel)
+      .then(async (blob) => {
+        if (preview?.url) URL.revokeObjectURL(preview.url);
+        const text =
+          channel === "console_log" || channel === "network_log"
+            ? await blob.text()
+            : "";
+        setPreview({
+          channel,
+          url: URL.createObjectURL(blob),
+          text,
+        });
+      })
+      .finally(() => setBusy(""));
+  };
   return (
-    <span className="execution-evidence">
+    <div className="execution-evidence">
       {available.map((channel) => (
-        <button
-          key={channel}
-          type="button"
-          className="link-button"
-          disabled={busy === channel}
-          onClick={() => {
-            setBusy(channel);
-            void api
-              .downloadEvidence(projectId, runId, resultId, channel)
-              .finally(() => setBusy(""));
-          }}
-        >
-          <Download size={12} />
-          {channel.replace("_", " ")}
-        </button>
+        <span key={channel} className="execution-evidence-actions">
+          {PREVIEWABLE.has(channel) && (
+            <button
+              type="button"
+              className="link-button"
+              disabled={busy === channel}
+              onClick={() => openPreview(channel)}
+            >
+              {channel.replace("_", " ")}
+            </button>
+          )}
+          <button
+            type="button"
+            className="link-button"
+            disabled={busy === `download-${channel}`}
+            onClick={() => {
+              setBusy(`download-${channel}`);
+              void api
+                .downloadEvidence(projectId, runId, resultId, channel)
+                .finally(() => setBusy(""));
+            }}
+          >
+            <Download size={12} />
+            {PREVIEWABLE.has(channel) ? "Download" : channel.replace("_", " ")}
+          </button>
+        </span>
       ))}
-    </span>
+      {preview && (
+        <div className="execution-preview">
+          {preview.channel === "screenshot" && (
+            <img src={preview.url} alt="Failure screenshot" />
+          )}
+          {preview.channel === "video" && (
+            <video src={preview.url} controls />
+          )}
+          {(preview.channel === "console_log" || preview.channel === "network_log") && (
+            <pre>{preview.text || "Empty log."}</pre>
+          )}
+        </div>
+      )}
+    </div>
   );
 }

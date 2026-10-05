@@ -342,6 +342,11 @@ export interface ExecutionEvidence {
   network_log: string | null;
 }
 
+export interface ExecutionInput {
+  name: string;
+  value: string;
+}
+
 export interface ExecutionResult {
   id: string;
   automation_script_id: string | null;
@@ -351,6 +356,11 @@ export interface ExecutionResult {
   evidence: ExecutionEvidence;
   duration_ms: number | null;
   error_message: string | null;
+  category?: string;
+  title?: string;
+  inputs?: ExecutionInput[];
+  cause?: string;
+  recommendation?: string;
 }
 
 export interface ExecutionRun {

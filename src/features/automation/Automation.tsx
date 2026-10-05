@@ -12,7 +12,6 @@ import {
   ErrorState,
   ProgressIndicator,
   StatusBadge,
-  NextAction,
 } from "../../components/ui";
 
 import type {
@@ -89,16 +88,6 @@ export default function Automation({
     (ids: string[]) => api.generateAutomation(projectId, ids),
     (data) => {
       setOpenedId(data.generation_id);
-      if (!data.execution_job_id) return;
-      sessionStorage.setItem(
-        `execution-job:${projectId}`,
-        JSON.stringify({
-          job_id: data.execution_job_id,
-          run_id: data.execution_run_id,
-          generation_id: data.generation_id,
-        }),
-      );
-      onNext?.();
     },
   );
 
@@ -232,7 +221,7 @@ export default function Automation({
           {generate.isPending && (
             <ProgressIndicator
               label="Writing the suite"
-              description="The server writes the Playwright code, then starts the execution agent."
+              description="The server writes the Playwright code and leaves it here for review."
             />
           )}
 
@@ -247,7 +236,17 @@ export default function Automation({
             file={file}
             preview={preview}
             onFile={setFile}
-            onNext={onNext}
+            onApproved={(data) => {
+              sessionStorage.setItem(
+                `execution-job:${projectId}`,
+                JSON.stringify({
+                  job_id: data.job_id,
+                  run_id: data.run_id,
+                  generation_id: result.generation_id,
+                }),
+              );
+              onNext?.();
+            }}
           />
         )}
       </div>
@@ -318,16 +317,39 @@ export default function Automation({
 function SuiteActions({
   projectId,
   result,
+  onApproved,
 }: {
   projectId: string;
   result: AutomationGeneration;
+  onApproved?: (data: { job_id: string; run_id: string }) => void;
 }) {
   const [downloading, setDownloading] = useState(false);
+  const [approving, setApproving] = useState(false);
   const [downloadError, setDownloadError] = useState("");
 
   return (
     <>
       <div className="actions">
+        <Button
+          busy={approving}
+          onClick={() => {
+            setDownloadError("");
+            setApproving(true);
+            void api
+              .approveAutomation(projectId, result.generation_id)
+              .then((data) => onApproved?.(data))
+              .catch((error: unknown) => {
+                setDownloadError(
+                  error instanceof Error
+                    ? error.message
+                    : "Approval failed.",
+                );
+              })
+              .finally(() => setApproving(false));
+          }}
+        >
+          Approve and run
+        </Button>
         <Button
           variant="secondary"
           busy={downloading}
@@ -382,14 +404,14 @@ function Result({
   file,
   preview,
   onFile,
-  onNext,
+  onApproved,
 }: {
   projectId: string;
   result: AutomationGeneration;
   file: string;
   preview?: string;
   onFile: (path: string) => void;
-  onNext?: () => void;
+  onApproved?: (data: { job_id: string; run_id: string }) => void;
 }) {
   return (
     <Card>
@@ -399,6 +421,7 @@ function Result({
         <SuiteActions
           projectId={projectId}
           result={result}
+          onApproved={onApproved}
         />
       </div>
 
@@ -506,14 +529,10 @@ function Result({
         </pre>
       </div>
 
-      {onNext && (
-        <NextAction
-          title="Run the suite against the application"
-          description="Execution captures pass/fail from assertions plus screenshots, video, traces, console, and network logs."
-          label="Continue to Execution"
-          onClick={onNext}
-        />
-      )}
+      <p className="muted">
+        Review the files above, then approve the suite. Execution starts
+        after approval and runs every script in this generation.
+      </p>
     </Card>
   );
 }

@@ -391,6 +391,12 @@ export const api = {
       test_case_ids: testCaseIds,
     }),
 
+  approveAutomation: (projectId: string, generationId: string) =>
+    request<ExecutionTrigger>(
+      `/automation/projects/${projectId}/generations/${generationId}/approve`,
+      {},
+    ),
+
   downloadAutomation: async (projectId: string, generationId: string) => {
     const headers: Record<string, string> = {};
     const apiKey = import.meta.env.VITE_API_KEY;
@@ -442,7 +448,7 @@ export const api = {
   ) =>
     request<ExecutionTrigger>(`/executions/projects/${projectId}`, body),
 
-  downloadEvidence: async (
+  fetchEvidence: async (
     projectId: string,
     runId: string,
     resultId: string,
@@ -462,7 +468,16 @@ export const api = {
     if (!response.ok) {
       throw new ApiError(response.status, "Evidence download failed. Please try again.");
     }
-    const blob = await response.blob();
+    return response.blob();
+  },
+
+  downloadEvidence: async (
+    projectId: string,
+    runId: string,
+    resultId: string,
+    channel: string,
+  ) => {
+    const blob = await api.fetchEvidence(projectId, runId, resultId, channel);
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;

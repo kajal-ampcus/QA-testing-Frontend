@@ -3609,10 +3609,44 @@ select,
   margin-top: 4px;
   max-width: 360px;
 }
+.execution-inputs {
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.execution-inputs li {
+  display: flex;
+  gap: 8px;
+  margin-top: 2px;
+  font-size: 12px;
+}
+.execution-inputs code {
+  color: #3d4a38;
+}
 .execution-evidence {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
   gap: 6px;
+}
+.execution-evidence-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.execution-preview img,
+.execution-preview video {
+  display: block;
+  max-width: 280px;
+  margin-top: 6px;
+  border-radius: 6px;
+}
+.execution-preview pre {
+  max-width: 280px;
+  max-height: 160px;
+  overflow: auto;
+  margin: 6px 0 0;
+  font-size: 11px;
+  white-space: pre-wrap;
 }
 .link-button {
   display: inline-flex;
