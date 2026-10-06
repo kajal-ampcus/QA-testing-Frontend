@@ -669,7 +669,7 @@ export default function TestCases({
               disabled={!requirements.length || !map}
             >
               <Plus size={15} />
-              Add edge case
+                Add Custom Case
             </Button>
             <Button
               variant="secondary"
