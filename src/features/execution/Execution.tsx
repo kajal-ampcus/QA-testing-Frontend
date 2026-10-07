@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Play, Download, Square } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
+import { ChevronRight, Play, Download, Square } from "lucide-react";
 import { api, ApiError } from "../../api/client";
 import { activeJob } from "../../utils/workflow";
 import {
@@ -14,8 +14,10 @@ import {
 import type {
   AutomationList,
   ExecutionEvidence,
+  ExecutionResult,
   ExecutionRun,
 } from "../../types/api";
+import { flowNameForCase, groupByFlow, isRunnableReview } from "../automation/flows";
 
 const CHANNELS = [
   "screenshot",
@@ -26,6 +28,117 @@ const CHANNELS = [
 ] as const;
 
 const startingSuites = new Set<string>();
+
+function FlowCheck({
+  checked,
+  partial,
+  disabled,
+  onChange,
+  label,
+  detail,
+}: {
+  checked: boolean;
+  partial: boolean;
+  disabled?: boolean;
+  onChange: () => void;
+  label: string;
+  detail: string;
+}) {
+  const ref = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (ref.current) ref.current.indeterminate = partial && !checked;
+  }, [partial, checked]);
+  return (
+    <label className="flow-head">
+      <input
+        ref={ref}
+        type="checkbox"
+        checked={checked}
+        disabled={disabled}
+        onChange={onChange}
+      />
+      <span>
+        <strong>{label}</strong>
+        <small>{detail}</small>
+      </span>
+    </label>
+  );
+}
+
+function selectionStorageKey(projectId: string, generationId: string) {
+  return `execution-picked:${projectId}:${generationId}`;
+}
+
+function readPicked(projectId: string, generationId: string, runnableIds: string[]): string[] | null {
+  if (!generationId) return null;
+  const raw = sessionStorage.getItem(selectionStorageKey(projectId, generationId));
+  if (raw == null) return null;
+  try {
+    const saved = JSON.parse(raw) as unknown;
+    if (!Array.isArray(saved)) return null;
+    const allowed = new Set(runnableIds);
+    return saved.filter((id): id is string => typeof id === "string" && allowed.has(id));
+  } catch {
+    return null;
+  }
+}
+
+function latestResults(runs: ExecutionRun[]): Array<ExecutionResult & { runId: string }> {
+  const seen = new Set<string>();
+  const rows: Array<ExecutionResult & { runId: string }> = [];
+  const ordered = [...runs].sort((left, right) =>
+    (right.created_at || "").localeCompare(left.created_at || ""),
+  );
+  for (const run of ordered) {
+    for (const result of run.results || []) {
+      const key = result.automation_script_id || result.spec_path || result.id;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      rows.push({ ...result, runId: run.id });
+    }
+  }
+  rows.sort((left, right) =>
+    (left.title || left.spec_path).localeCompare(right.title || right.spec_path),
+  );
+  return rows;
+}
+
+function countResults(rows: { status: string }[]) {
+  const summary = { passed: 0, failed: 0, skipped: 0, error: 0 };
+  for (const row of rows) {
+    const key = row.status.toLowerCase();
+    if (key === "passed" || key === "failed" || key === "skipped" || key === "error") {
+      summary[key] += 1;
+    }
+  }
+  return summary;
+}
+
+function caseMark(
+  scriptId: string,
+  reviewStatus: string,
+  executed: Map<string, string>,
+  latestIds: Set<string>,
+) {
+  const review = reviewStatus.replaceAll("_", " ");
+  const status = executed.get(scriptId);
+  if (!status) return `${review} · Pending`;
+  if (latestIds.has(scriptId)) return `${review} · Latest run · ${status}`;
+  return `${review} · Executed · ${status}`;
+}
+
+function caseMarkClass(scriptId: string, executed: Map<string, string>, latestIds: Set<string>) {
+  if (!executed.has(scriptId)) return "case-pending";
+  if (latestIds.has(scriptId)) return "case-latest";
+  return "case-executed";
+}
+
+function runButtonLabel(flowNames: string[], everyFlow: boolean, hasHistory: boolean, count: number) {
+  if (count === 0) return hasHistory ? "Run again" : "Run suite";
+  if (everyFlow) return hasHistory ? "Run again" : "Run suite";
+  if (flowNames.length === 1) return `Run ${flowNames[0]}`;
+  return `Run selected (${count})`;
+}
 
 export default function Execution({
   projectId,
@@ -40,6 +153,8 @@ export default function Execution({
   const [runDestructive, setRunDestructive] = useState(false);
   const [jobId, setJobId] = useState("");
   const [openedId, setOpenedId] = useState<string | null>(null);
+  const [pinnedId, setPinnedId] = useState<string | null>(null);
+  const [resultsMode, setResultsMode] = useState<"latest" | "all">("latest");
   const [booting, setBooting] = useState(false);
   const [stopping, setStopping] = useState(false);
   const [autoError, setAutoError] = useState<unknown>(null);
@@ -53,6 +168,19 @@ export default function Execution({
       )
         ? 2000
         : false,
+  });
+  const suite = useQuery({
+    queryKey: ["workspace", projectId, "automation", generationId],
+    queryFn: ({ signal }) => api.automationGeneration(projectId, generationId, signal),
+    enabled: !!generationId,
+  });
+  const tests = useQuery({
+    queryKey: ["workspace", projectId, "tests"],
+    queryFn: ({ signal }) => api.tests(projectId, signal),
+  });
+  const map = useQuery({
+    queryKey: ["workspace", projectId, "map"],
+    queryFn: ({ signal }) => api.map(projectId, signal),
   });
   const liveOwner = useQuery({
     queryKey: ["execution-live-owner"],
@@ -75,21 +203,29 @@ export default function Execution({
     },
   });
   const running = !!jobId && !job.error && (!job.data || activeJob(job.data.status));
-  const beginRun = async (generation: string, runDestructiveFlag = false) => {
+  const beginRun = async (
+    generation: string,
+    runDestructiveFlag = false,
+    scriptIds: string[] = [],
+  ) => {
     const key = `${projectId}:${generation}`;
     if (startingSuites.has(key)) return;
     startingSuites.add(key);
     setBooting(true);
     setAutoError(null);
     setOpenedId(null);
+    setResultsMode("latest");
     setJobId("");
     try {
       const data = await api.startExecution(projectId, {
         generation_id: generation,
         run_destructive: runDestructiveFlag,
+        script_ids: scriptIds,
       });
       setJobId(data.job_id);
       setOpenedId(data.run_id);
+      setPinnedId(data.run_id);
+      setResultsMode("latest");
       await client.invalidateQueries({ queryKey: ["workspace", projectId, "executions"] });
     } catch (err: unknown) {
       if (err instanceof ApiError && err.status === 409) {
@@ -131,6 +267,7 @@ export default function Execution({
   useEffect(() => {
     setJobId("");
     setOpenedId(null);
+    setPinnedId(null);
     setAutoError(null);
     setGenerationId(generations[0]?.generation_id || "");
   }, [projectId]);
@@ -203,6 +340,116 @@ export default function Execution({
     .filter(Boolean);
   const currentStep = activityLines.at(-1) || "";
   const projectBusy = booting || running || !!liveRun;
+  const flowScripts = useMemo(() => {
+    const byCase = new Map((tests.data ?? []).map((test) => [test.id, test]));
+    return (suite.data?.scripts ?? [])
+      .map((script) => {
+        const test = byCase.get(script.test_case_id);
+        return {
+          scriptId: script.script_id,
+          code: script.test_case_code,
+          title: test?.current.title || script.test_case_code,
+          reviewStatus: script.review_status,
+          runnable: isRunnableReview(script.review_status),
+          flow: flowNameForCase(test, map.data),
+        };
+      })
+      .sort((left, right) => left.code.localeCompare(right.code));
+  }, [suite.data, tests.data, map.data]);
+  const runnableKey = flowScripts
+    .filter((script) => script.runnable)
+    .map((script) => script.scriptId)
+    .join(",");
+  const [picked, setPicked] = useState<string[]>([]);
+  const [closedFlows, setClosedFlows] = useState<Set<string>>(new Set());
+  const appliedKey = useRef("");
+  useEffect(() => {
+    const key = `${projectId}|${generationId}|${runnableKey}`;
+    if (appliedKey.current === key) return;
+    appliedKey.current = key;
+    const runnableIds = runnableKey ? runnableKey.split(",") : [];
+    const saved = readPicked(projectId, generationId, runnableIds);
+    setPicked(saved ?? runnableIds);
+    setClosedFlows(new Set());
+  }, [projectId, generationId, runnableKey]);
+  const flowGroups = useMemo(
+    () => groupByFlow(flowScripts, (script) => script.flow),
+    [flowScripts],
+  );
+  const pickedSet = useMemo(() => new Set(picked), [picked]);
+  const selectedFlowNames = flowGroups
+    .filter((group) => {
+      const runnable = group.items.filter((script) => script.runnable);
+      return runnable.length > 0 && runnable.every((script) => pickedSet.has(script.scriptId));
+    })
+    .map((group) => group.flow);
+  const flowsWithCases = flowGroups.filter((group) => group.items.some((script) => script.runnable));
+  const everyFlow =
+    flowsWithCases.length > 0 && flowsWithCases.every((group) => selectedFlowNames.includes(group.flow));
+  const partialFlow = flowGroups.some((group) => {
+    const runnable = group.items.filter((script) => script.runnable);
+    const chosen = runnable.filter((script) => pickedSet.has(script.scriptId)).length;
+    return chosen > 0 && chosen < runnable.length;
+  });
+  const singleFlow = !everyFlow && !partialFlow && selectedFlowNames.length === 1;
+  const buttonLabel = runButtonLabel(
+    singleFlow ? selectedFlowNames : [],
+    everyFlow,
+    (history.data?.runs.length ?? 0) > 0,
+    picked.length,
+  );
+  const toggleScripts = (ids: string[], checked: boolean) => {
+    setPicked((current) => {
+      const without = current.filter((id) => !ids.includes(id));
+      const next = checked ? [...without, ...ids] : without;
+      if (generationId) {
+        sessionStorage.setItem(selectionStorageKey(projectId, generationId), JSON.stringify(next));
+      }
+      return next;
+    });
+  };
+  const generationRuns = useMemo(
+    () => (history.data?.runs ?? []).filter((item) => item.generation_id === generationId),
+    [history.data, generationId],
+  );
+  const runQueries = useQueries({
+    queries: generationRuns.map((item) => ({
+      queryKey: ["workspace", projectId, "execution-run", item.id],
+      queryFn: ({ signal }: { signal?: AbortSignal }) =>
+        api.executionRun(projectId, item.id, signal),
+      refetchInterval:
+        item.status === "QUEUED" || item.status === "RUNNING" ? 2000 : false,
+    })),
+  });
+  const loadedRuns = runQueries
+    .map((query) => query.data)
+    .filter((item): item is ExecutionRun => !!item);
+  const combinedRows = latestResults(loadedRuns);
+  const latestRunId = openedId || generationRuns[0]?.id || "";
+  const latestLoaded = loadedRuns.find((item) => item.id === latestRunId);
+  const latestScriptIds = new Set(
+    (latestLoaded?.results || [])
+      .map((result) => result.automation_script_id)
+      .filter((id): id is string => !!id),
+  );
+  const executedStatus = new Map<string, string>();
+  for (const row of combinedRows) {
+    if (row.automation_script_id) executedStatus.set(row.automation_script_id, row.status);
+  }
+  const pendingIds = flowScripts
+    .filter((script) => script.runnable && !executedStatus.has(script.scriptId))
+    .map((script) => script.scriptId);
+  const latestIds = flowScripts
+    .filter((script) => script.runnable && latestScriptIds.has(script.scriptId))
+    .map((script) => script.scriptId);
+  const replacePicked = (ids: string[]) => {
+    setPicked(ids);
+    if (generationId) {
+      sessionStorage.setItem(selectionStorageKey(projectId, generationId), JSON.stringify(ids));
+    }
+  };
+  const pinnedRun = pinnedId ? loadedRuns.find((item) => item.id === pinnedId) : undefined;
+  const showCombined = resultsMode === "all" && !pinnedId;
 
   return (
     <div className="two-column">
@@ -215,9 +462,9 @@ export default function Execution({
             <div>
               <h2>Execution</h2>
               <p>
-                After the suite is generated, this step runs that Playwright code,
-                including edits saved in the suite folder. The run after new
-                cases are added covers only those new specs.
+                Check Login to run every login spec in the suite, including
+                cases added in an earlier generate. Check every flow to run
+                the whole suite.
               </p>
             </div>
           </div>
@@ -258,13 +505,109 @@ export default function Execution({
                   Destructive scripts stay skipped until a tester approves them.
                 </p>
               )}
+              {suite.isPending ? (
+                <p className="muted">Loading flows from this suite.</p>
+              ) : suite.error ? (
+                <ErrorState error={suite.error} />
+              ) : flowGroups.length === 0 ? (
+                <p className="muted">This suite has no scripts yet.</p>
+              ) : (
+                <ul className="automation-cases flow-picker">
+                  {flowGroups.map((group) => {
+                    const runnable = group.items.filter((script) => script.runnable);
+                    const runnableIds = runnable.map((script) => script.scriptId);
+                    const chosen = runnableIds.filter((id) => pickedSet.has(id)).length;
+                    const open = !closedFlows.has(group.flow);
+                    return (
+                      <li key={group.flow} className="flow-group">
+                        <div className="flow-group-bar">
+                          <button
+                            type="button"
+                            className="flow-toggle"
+                            aria-expanded={open}
+                            onClick={() =>
+                              setClosedFlows((current) => {
+                                const next = new Set(current);
+                                if (next.has(group.flow)) next.delete(group.flow);
+                                else next.add(group.flow);
+                                return next;
+                              })
+                            }
+                          >
+                            <ChevronRight size={14} className={open ? "chevron open" : "chevron"} />
+                          </button>
+                          <FlowCheck
+                            checked={runnableIds.length > 0 && chosen === runnableIds.length}
+                            partial={chosen > 0}
+                            disabled={runnableIds.length === 0}
+                            onChange={() =>
+                              toggleScripts(runnableIds, chosen !== runnableIds.length)
+                            }
+                            label={group.flow}
+                            detail={`${chosen} selected · ${
+                              runnable.filter((script) => !executedStatus.has(script.scriptId)).length
+                            } pending · ${
+                              runnable.filter((script) => executedStatus.has(script.scriptId)).length
+                            } executed`}
+                          />
+                        </div>
+                        {open && (
+                          <ul>
+                            {group.items.map((script) => (
+                              <li key={script.scriptId}>
+                                <label>
+                                  <input
+                                    type="checkbox"
+                                    checked={script.runnable && pickedSet.has(script.scriptId)}
+                                    disabled={!script.runnable}
+                                    onChange={() =>
+                                      toggleScripts(
+                                        [script.scriptId],
+                                        !pickedSet.has(script.scriptId),
+                                      )
+                                    }
+                                  />
+                                  <span>
+                                    <strong>
+                                      {script.code} · {script.title}
+                                    </strong>
+                                    <small className={caseMarkClass(script.scriptId, executedStatus, latestScriptIds)}>
+                                      {caseMark(script.scriptId, script.reviewStatus, executedStatus, latestScriptIds)}
+                                    </small>
+                                  </span>
+                                </label>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
               <div className="actions">
                 <Button
-                  busy={booting || running}
-                  disabled={!generationId || projectBusy}
-                  onClick={() => void beginRun(generationId, canDestroy && runDestructive)}
+                  variant="secondary"
+                  disabled={pendingIds.length === 0 || projectBusy}
+                  onClick={() => replacePicked(pendingIds)}
                 >
-                  {(history.data?.runs.length ?? 0) > 0 ? "Run again" : "Run suite"}
+                  Select pending
+                </Button>
+                <Button
+                  variant="secondary"
+                  disabled={latestIds.length === 0 || projectBusy}
+                  onClick={() => replacePicked(latestIds)}
+                >
+                  Select latest run
+                </Button>
+                <Button
+                  busy={booting || running}
+                  disabled={!generationId || projectBusy || picked.length === 0}
+                  onClick={() =>
+                    void beginRun(generationId, canDestroy && runDestructive, picked)
+                  }
+                >
+                  {buttonLabel}
                 </Button>
                 {projectBusy && (
                   <Button
@@ -322,7 +665,20 @@ export default function Execution({
             />
           </Card>
         )}
-        {run && <RunDetail projectId={projectId} run={run} />}
+        {(() => {
+          const latestRun = loadedRuns.find((item) => item.id === latestRunId) || run;
+          const shown = pinnedRun || (showCombined ? latestRun || loadedRuns[0] : latestRun || loadedRuns[0]);
+          if (!shown) return null;
+          return (
+            <RunDetail
+              projectId={projectId}
+              run={shown}
+              rows={showCombined && combinedRows.length > 0 ? combinedRows : undefined}
+              combined={showCombined && combinedRows.length > 0}
+              latest={!showCombined && (!pinnedId || pinnedId === latestRunId)}
+            />
+          );
+        })()}
       </div>
       <aside>
         <Card className="guide-card">
@@ -344,9 +700,44 @@ export default function Execution({
             <p className="muted">No suite has been executed for this project yet.</p>
           ) : (
             <ul className="automation-history">
+              <li>
+                <button
+                  type="button"
+                  aria-current={
+                    resultsMode === "latest" && (!pinnedId || pinnedId === latestRunId)
+                      ? "true"
+                      : undefined
+                  }
+                  onClick={() => {
+                    setPinnedId(null);
+                    setResultsMode("latest");
+                  }}
+                >
+                  <span>Latest run</span>
+                  <small>Only the cases executed most recently</small>
+                </button>
+                <button
+                  type="button"
+                  aria-current={!pinnedId && resultsMode === "all" ? "true" : undefined}
+                  onClick={() => {
+                    setPinnedId(null);
+                    setResultsMode("all");
+                  }}
+                >
+                  <span>All cases so far</span>
+                  <small>Login and later flows stay together</small>
+                </button>
+              </li>
               {history.data?.runs.map((item) => (
                 <li key={item.id}>
-                  <button type="button" onClick={() => setOpenedId(item.id)}>
+                  <button
+                    type="button"
+                    aria-current={pinnedId === item.id ? "true" : undefined}
+                    onClick={() => {
+                      setPinnedId(item.id);
+                      setResultsMode("latest");
+                    }}
+                  >
                     <span>{item.status}</span>
                     <small>
                       {(Number(item.summary.passed) || 0) +
@@ -369,19 +760,30 @@ export default function Execution({
 function RunDetail({
   projectId,
   run,
+  rows,
+  combined = false,
+  latest = false,
 }: {
   projectId: string;
   run: ExecutionRun;
+  rows?: Array<ExecutionResult & { runId: string }>;
+  combined?: boolean;
+  latest?: boolean;
 }) {
-  const results = run.results || [];
+  const results = rows ?? (run.results || []).map((result) => ({ ...result, runId: run.id }));
+  const summary = combined ? countResults(results) : run.summary;
   return (
     <Card>
       <p className="automation-banner">
-        {run.status === "COMPLETED"
-          ? "Suite executed against the application"
-          : run.status === "FAILED"
-            ? "Execution finished with failures"
-            : `Run ${run.status.toLowerCase()}`}
+        {combined
+          ? "Each case keeps its latest result, including flows you ran earlier."
+          : latest
+            ? "These are the cases from the latest execution."
+            : run.status === "COMPLETED"
+            ? "Suite executed against the application"
+            : run.status === "FAILED"
+              ? "Execution finished with failures"
+              : `Run ${run.status.toLowerCase()}`}
       </p>
       <div className="automation-status">
         <StatusBadge status={run.status} />
@@ -396,19 +798,19 @@ function RunDetail({
       <dl className="automation-counts">
         <div>
           <dt>Passed</dt>
-          <dd>{run.summary.passed ?? 0}</dd>
+          <dd>{summary.passed ?? 0}</dd>
         </div>
         <div>
           <dt>Failed</dt>
-          <dd>{run.summary.failed ?? 0}</dd>
+          <dd>{summary.failed ?? 0}</dd>
         </div>
         <div>
           <dt>Skipped</dt>
-          <dd>{run.summary.skipped ?? 0}</dd>
+          <dd>{summary.skipped ?? 0}</dd>
         </div>
         <div>
           <dt>Error</dt>
-          <dd>{run.summary.error ?? 0}</dd>
+          <dd>{summary.error ?? 0}</dd>
         </div>
       </dl>
       {run.log && <pre className="source-preview">{run.log}</pre>}
@@ -469,7 +871,7 @@ function RunDetail({
                   <td>
                     <EvidenceLinks
                       projectId={projectId}
-                      runId={run.id}
+                      runId={result.runId}
                       resultId={result.id}
                       evidence={result.evidence}
                     />

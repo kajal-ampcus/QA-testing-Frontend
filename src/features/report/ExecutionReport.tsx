@@ -70,14 +70,21 @@ export default function ExecutionReport({ projectId }: { projectId: string }) {
               value={runId}
               onChange={(event) => setRunId(event.target.value)}
             >
-              {finished.map((run) => (
+              {finished.map((run, index) => (
                 <option key={run.id} value={run.id}>
-                  {run.status} · {run.base_url || "application"} ·{" "}
+                  {index === 0 ? "Latest run · " : ""}
+                  {run.result_count} cases · {run.status} ·{" "}
                   {(run.finished_at || run.created_at || "").slice(0, 16)}
                 </option>
               ))}
             </select>
           </label>
+          {runId === latestId && (
+            <p className="muted">
+              This report is the latest execution. Earlier runs stay in the list
+              if you need a previous flow.
+            </p>
+          )}
           {report.isPending && <LoadingState />}
           {report.error && <ErrorState error={report.error} />}
           {data && (

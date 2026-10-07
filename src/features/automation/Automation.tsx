@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   ArrowRight,
@@ -29,12 +29,10 @@ import type {
   Requirement,
   TestCase,
 } from "../../types/api";
+import { flowNameForCase, groupByFlow } from "./flows";
 
-const STACKS: Record<string, string[]> = {
-  typescript: ["playwright", "selenium"],
-  python: ["playwright", "selenium"],
-  java: ["playwright", "selenium"],
-};
+const WRITABLE_LANGUAGE = "typescript";
+const WRITABLE_FRAMEWORK = "playwright";
 
 
 function LoginAccount({ projectId }: { projectId: string }) {
@@ -143,6 +141,46 @@ function ineligibleReason(
   return null;
 }
 
+function FlowCheck({
+  checked,
+  partial,
+  disabled,
+  onChange,
+  label,
+  detail,
+}: {
+  checked: boolean;
+  partial: boolean;
+  disabled?: boolean;
+  onChange: () => void;
+  label: string;
+  detail: string;
+}) {
+  const ref = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (ref.current) ref.current.indeterminate = partial && !checked;
+  }, [partial, checked]);
+  return (
+    <label className="flow-head">
+      <input
+        ref={ref}
+        type="checkbox"
+        checked={checked}
+        disabled={disabled}
+        onChange={onChange}
+      />
+      <span>
+        <strong>{label}</strong>
+        <small>{detail}</small>
+      </span>
+    </label>
+  );
+}
+
+function caseCount(count: number): string {
+  return `${count} case${count === 1 ? "" : "s"}`;
+}
+
 
 export default function Automation({
   projectId,
@@ -169,15 +207,13 @@ export default function Automation({
   const eligible = rows.filter((row) => !row.reason);
   const blockedHere = rows.filter((row) => row.reason);
 
-  const [selected, setSelected] = useState<string[]>(() =>
-    eligible.map((row) => row.test.id),
-  );
+  const [selected, setSelected] = useState<string[]>([]);
 
   const [file, setFile] = useState<string>("");
   const [openedId, setOpenedId] = useState<string | null>(null);
-  const [language, setLanguage] = useState("typescript");
-  const [framework, setFramework] = useState("playwright");
-  const frameworks = STACKS[language] ?? STACKS.typescript;
+  const [language, setLanguage] = useState(WRITABLE_LANGUAGE);
+  const [framework, setFramework] = useState(WRITABLE_FRAMEWORK);
+  const canWrite = language === WRITABLE_LANGUAGE && framework === WRITABLE_FRAMEWORK;
 
   const generate = useAction(
     projectId,
@@ -226,12 +262,38 @@ export default function Automation({
     (item) => item.path === file,
   )?.content;
 
+  const inSuiteIds = useMemo(
+    () => (result?.scripts ?? []).map((script) => script.test_case_id).sort().join(","),
+    [result],
+  );
+  const inSuite = useMemo(() => new Set(inSuiteIds ? inSuiteIds.split(",") : []), [inSuiteIds]);
+  useEffect(() => {
+    setSelected((current) => current.filter((id) => !inSuite.has(id)));
+  }, [inSuite]);
+  const flowGroups = useMemo(
+    () =>
+      groupByFlow(eligible, ({ test }) => flowNameForCase(test, map)).map((group) => ({
+        ...group,
+        fresh: group.items.filter(({ test }) => !inSuite.has(test.id)),
+      })),
+    [eligible, map, inSuite],
+  );
+  const toWrite = selected.filter((id) => !inSuite.has(id));
+  const suiteExists = (result?.scripts.length ?? 0) > 0;
+
   const toggle = (id: string) => {
+    if (inSuite.has(id)) return;
     setSelected((current) =>
       current.includes(id)
         ? current.filter((item) => item !== id)
         : [...current, id],
     );
+  };
+  const toggleFlow = (ids: string[], checked: boolean) => {
+    setSelected((current) => {
+      const without = current.filter((id) => !ids.includes(id));
+      return checked ? [...without, ...ids] : without;
+    });
   };
 
   return (
@@ -249,8 +311,9 @@ export default function Automation({
               </h2>
 
               <p>
-                Choose a language and framework, then turn approved cases
-                into a suite you can review before it runs.
+                Check the cases to write. A later generate adds only the new
+                cases and leaves the existing Playwright files in place. Cases
+                for the same page stay in one flow, such as Login or Dashboard.
               </p>
             </div>
           </div>
@@ -262,28 +325,56 @@ export default function Automation({
               description="Approve a test case on the previous step before generating automation."
             />
           ) : (
-            <ul className="automation-cases">
-              {eligible.map(({ test }) => (
-                <li key={test.id}>
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={selected.includes(test.id)}
-                      onChange={() => toggle(test.id)}
+            <ul className="automation-cases flow-picker">
+              {flowGroups.map((group) => {
+                const freshIds = group.fresh.map(({ test }) => test.id);
+                const checked =
+                  freshIds.length > 0 && freshIds.every((id) => selected.includes(id));
+                const partial = freshIds.some((id) => selected.includes(id));
+                const inSuiteCount = group.items.length - group.fresh.length;
+                return (
+                  <li key={group.flow} className="flow-group">
+                    <FlowCheck
+                      checked={checked}
+                      partial={partial}
+                      disabled={freshIds.length === 0}
+                      onChange={() => toggleFlow(freshIds, !checked)}
+                      label={group.flow}
+                      detail={
+                        inSuiteCount
+                          ? `${caseCount(group.items.length)} · ${inSuiteCount} in suite`
+                          : caseCount(group.items.length)
+                      }
                     />
-
-                    <span>
-                      <strong>
-                        {test.tc_code} · {test.current.title}
-                      </strong>
-
-                      <small>Version {test.current_version}</small>
-                    </span>
-                  </label>
-
-                  <StatusBadge status={test.status} />
-                </li>
-              ))}
+                    <ul>
+                      {group.items.map(({ test }) => {
+                        const written = inSuite.has(test.id);
+                        return (
+                          <li key={test.id}>
+                            <label>
+                              <input
+                                type="checkbox"
+                                checked={!written && selected.includes(test.id)}
+                                disabled={written}
+                                onChange={() => toggle(test.id)}
+                              />
+                              <span>
+                                <strong>
+                                  {test.tc_code} · {test.current.title}
+                                </strong>
+                                <small>
+                                  {written ? "In suite" : `Version ${test.current_version}`}
+                                </small>
+                              </span>
+                            </label>
+                            <StatusBadge status={test.status} />
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </li>
+                );
+              })}
             </ul>
           )}
 
@@ -307,16 +398,15 @@ export default function Automation({
               <span>Language</span>
               <select
                 value={language}
-                onChange={(event) => {
-                  const next = event.target.value;
-                  setLanguage(next);
-                  const options = STACKS[next] ?? [];
-                  setFramework(options[0] ?? "");
-                }}
+                onChange={(event) => setLanguage(event.target.value)}
               >
                 <option value="typescript">TypeScript</option>
-                <option value="python">Python</option>
-                <option value="java">Java</option>
+                <option value="python" disabled>
+                  Python — not available yet
+                </option>
+                <option value="java" disabled>
+                  Java — not available yet
+                </option>
               </select>
             </label>
             <label className="field">
@@ -325,29 +415,36 @@ export default function Automation({
                 value={framework}
                 onChange={(event) => setFramework(event.target.value)}
               >
-                {frameworks.map((item) => (
-                  <option key={item} value={item}>
-                    {item === "playwright" ? "Playwright" : "Selenium"}
-                  </option>
-                ))}
+                <option value="playwright">Playwright</option>
+                <option value="selenium" disabled>
+                  Selenium — not available yet
+                </option>
               </select>
             </label>
           </div>
           <p className="muted">
-            Playwright and Selenium are available for every language.
-            TypeScript with Playwright is the suite this app can write and
-            run. The other pairs stay closed until a writer exists.
+            This app writes and runs TypeScript with Playwright. Python, Java,
+            and Selenium stay closed until a writer exists.
           </p>
 
           <div className="actions">
             <Button
               busy={generate.isPending}
-              disabled={!selected.length || !framework}
-              onClick={() =>
-                generate.mutate({ ids: selected, language, framework })
-              }
+              disabled={!toWrite.length || !canWrite}
+              onClick={() => {
+                if (!canWrite) return;
+                generate.mutate({
+                  ids: toWrite,
+                  language: WRITABLE_LANGUAGE,
+                  framework: WRITABLE_FRAMEWORK,
+                });
+              }}
             >
-              Generate suite
+              {toWrite.length === 0
+                ? "Generate cases"
+                : suiteExists
+                  ? `Add ${caseCount(toWrite.length)}`
+                  : `Generate ${caseCount(toWrite.length)}`}
             </Button>
 
             {onNext && (history.data?.generations.length ?? 0) > 0 && (

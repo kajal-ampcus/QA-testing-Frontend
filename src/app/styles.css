@@ -3492,6 +3492,60 @@ select,
   color: #7d8b76;
   font-size: 12px;
 }
+.automation-cases li.flow-group {
+  display: block;
+  padding: 10px 0 4px;
+}
+.flow-group-bar {
+  display: flex;
+  align-items: flex-start;
+  gap: 2px;
+}
+.flow-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  margin-top: 1px;
+  border: 0;
+  background: transparent;
+  color: #6d7f72;
+  cursor: pointer;
+  padding: 0;
+}
+.flow-toggle .chevron {
+  transition: transform 120ms ease;
+}
+.flow-toggle .chevron.open {
+  transform: rotate(90deg);
+}
+.flow-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+  margin: 0;
+}
+.flow-group > ul {
+  list-style: none;
+  margin: 0;
+  padding: 2px 0 4px 28px;
+}
+.flow-group > ul > li {
+  border-top: 0;
+  padding: 6px 0;
+}
+.automation-cases .case-pending {
+  color: #8a6232;
+}
+.automation-cases .case-latest {
+  color: #174b36;
+  font-weight: 650;
+}
+.automation-cases .case-executed {
+  color: #5d6d63;
+}
 .automation-blocked {
   margin-top: 18px;
 }
