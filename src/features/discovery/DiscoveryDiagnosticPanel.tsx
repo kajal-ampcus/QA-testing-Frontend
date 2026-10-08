@@ -101,10 +101,12 @@ export function DiscoveryDiagnosticPanel({
   diagnostic,
   status,
   mapId,
+  awaitingSelection = false,
 }: {
   diagnostic: DiscoveryDiagnostic;
   status: string;
   mapId: string;
+  awaitingSelection?: boolean;
 }) {
   const isFailed = status === "FAILED";
   const consoleErrors = diagnostic.console_errors ?? [];
@@ -119,6 +121,12 @@ export function DiscoveryDiagnosticPanel({
     consoleErrors.length +
     networkErrors.length +
     failedActions.length;
+
+  if (awaitingSelection && totalIssues === 0 && !isFailed) {
+    return <div className="notice" role="status"><strong>Selected pages discovered successfully</strong>
+      <p>Choose another path or generate tests for a completed path above. Unexplored paths are saved for later.</p>
+    </div>;
+  }
 
   return (
     <div className="diag-panel">
@@ -197,17 +205,19 @@ export function DiscoveryDiagnosticPanel({
             ) : diagnostic.auth_attempted ? (
               <><CheckCircle2 size={10} /> Yes</>
             ) : (
-              <><XCircle size={10} /> No — no credential configured</>
+              <>Not attempted in this discovery step</>
             )}
           </span>
         </div>
         <div className="diag-auth-row">
           <span className="diag-auth-label">Auth succeeded</span>
-          <span className={`badge ${diagnostic.auth_succeeded ? "good" : "bad"}`}>
+          <span className={`badge ${diagnostic.auth_succeeded ? "good" : diagnostic.auth_attempted ? "bad" : ""}`}>
             {securityVerificationRequired ? (
               <><XCircle size={10} /> Not reached</>
             ) : diagnostic.auth_succeeded ? (
               <><CheckCircle2 size={10} /> Yes — logged in successfully</>
+            ) : !diagnostic.auth_attempted ? (
+              <>Not evaluated</>
             ) : (
               <><XCircle size={10} /> No — login failed</>
             )}

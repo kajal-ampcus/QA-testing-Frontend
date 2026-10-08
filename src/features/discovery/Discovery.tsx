@@ -23,6 +23,7 @@ import LiveDiscoveryGraph from "./LiveDiscoveryGraph";
 import type { ApplicationGraphData } from "../application-map/graphLayout";
 import { DiscoveryDiagnosticPanel } from "./DiscoveryDiagnosticPanel";
 import { loginFailureNotice } from "../application-map/ApplicationMap";
+import { DiscoveryPaths } from "./DiscoveryPaths";
 
 export default function Discovery({
   project,
@@ -35,6 +36,9 @@ export default function Discovery({
   refreshJob,
   clearJob,
   onStopped,
+  onGenerateTests,
+  generatingTests,
+  generationError,
 }: {
   project: Project;
   requirement: Requirement;
@@ -46,8 +50,16 @@ export default function Discovery({
   refreshJob: () => void;
   clearJob: () => void;
   onStopped: () => void;
+  onGenerateTests: (branchKey?: string) => void;
+  generatingTests: boolean;
+  generationError: unknown;
 }) {
   const [url, setUrl] = useState(project.application_url || "");
+  const [mode, setMode] = useState<"guided" | "complete">("guided");
+  const [branches, setBranches] = useState<string[]>([]);
+  const [submittedMode, setSubmittedMode] = useState<"guided" | "complete" | null>(null);
+  const guidedMap = map?.discovery_checkpoint?.configuration.mode === "guided";
+  const savedBranches = map?.discovery_checkpoint?.jobs?.filter((item) => item.path.length > 0) ?? [];
   const [pages, setPages] = useState(
     map?.discovery_checkpoint?.configuration.max_pages ?? 150,
   );
@@ -90,7 +102,8 @@ export default function Discovery({
     worker_limit: workerLimit,
     automatic_limits: false,
     credential_ref: selectedRef ?? undefined,
-    discovery_mode: "complete" as const,
+    discovery_mode: mode,
+    selected_branches: resume && mode === "guided" ? branches : [],
     selected_auth_flow: null,
     selected_auth_flows: [],
     selected_areas: [],
@@ -105,15 +118,18 @@ export default function Discovery({
       project.id,
       discoveryBody(
         false,
-        map?.status === "PARTIAL" && !!map.discovery_checkpoint,
+        !!map && (mode === "guided" || (map.status === "PARTIAL" && !!map.discovery_checkpoint)),
       ),
     ),
-    (data) => onStarted(data.job_id),
+    (data) => { setSubmittedMode(mode); setBranches([]); onStarted(data.job_id); },
   );
   const continueDiscovery = useAction(
     project.id,
-    () => api.discover(project.id, discoveryBody(true)),
-    (data) => onStarted(data.job_id),
+    (selected: string[] | undefined) => api.discover(project.id, {
+      ...discoveryBody(true),
+      selected_branches: selected ?? branches,
+    }),
+    (data) => { setSubmittedMode(mode); setBranches([]); onStarted(data.job_id); },
   );
   const stopDiscovery = useAction(
     project.id,
@@ -139,7 +155,8 @@ export default function Discovery({
   const partial =
     !running &&
     (job?.result?.status === "PARTIAL" || map?.status === "PARTIAL");
-  const resumable = partial && !!map?.discovery_checkpoint;
+  const resumable = (partial || !!guidedMap) && !!map?.discovery_checkpoint;
+  const activeGuided = submittedMode ? submittedMode === "guided" : guidedMap;
 
   /**
    * Derive the role name shown in the "Discovered as" badge on the map.
@@ -157,10 +174,9 @@ export default function Discovery({
             <Radar size={21} />
           </div>
           <div>
-            <h2>Verify working screens</h2>
+            <h2>Explore your application</h2>
             <p>
-              Sanity-check that login, dashboard, orders and other functions
-              work so we can generate test cases — not a DOM element inventory.
+              Discover a page, choose its next paths, and generate tests from the observed screens.
             </p>
           </div>
           <StatusBadge
@@ -174,6 +190,21 @@ export default function Discovery({
                     : map?.status || "Ready"
             }
           />
+        </div>
+
+        <div className="notice" role="status">
+          <strong>
+            {running
+              ? activeGuided ? "Guided discovery is running" : "Automatic discovery is running"
+              : mode === "guided" ? "Guided discovery: you choose the next path" : "Automatic discovery selected"}
+          </strong>
+          <p>
+            {running && !activeGuided
+              ? "This run uses the previous automatic mode and will continue beyond login. Stop discovery, then start a guided map to choose each next page."
+              : !running && mode === "complete"
+                ? "Automatic mode follows safe reachable paths without asking you to select each page. Choose Guided for step-by-step exploration."
+              : "Each selected page is inspected once. After login, discovery pauses on the landing page and shows its available paths below. It waits for your selection before following them."}
+          </p>
         </div>
 
         {/* Job error */}
@@ -196,7 +227,7 @@ export default function Discovery({
               }
               description={
                 job?.status === "in_progress"
-                  ? "Crawling the whole application. Workers share one map of covered pages."
+                  ? "Inspecting the selected scope and saving available navigation paths."
                   : "Discovery has been queued. This page updates automatically."
               }
             />
@@ -263,7 +294,9 @@ export default function Discovery({
               <strong>
                 {failed
                   ? "Discovery failed"
-                  : "Discovery produced a partial map"}
+                  : map?.termination_reason === "AWAITING_BRANCH_SELECTION"
+                    ? "Choose what to explore next"
+                    : "Discovery produced a partial map"}
               </strong>
               <p>
                 {map?.termination_reason
@@ -290,9 +323,39 @@ export default function Discovery({
           <form
             onSubmit={(e) => {
               e.preventDefault();
+              if (generatingTests) return;
               discover.mutate();
             }}
           >
+            <label>
+              Exploration mode
+              <select value={mode} onChange={(e) => setMode(e.target.value as "guided" | "complete")}>
+                <option value="guided">Guided — choose each next page</option>
+                <option value="complete">Automatic — explore safe reachable paths</option>
+              </select>
+            </label>
+            {map && !guidedMap && mode === "guided" && (
+              <p className="notice">
+                This map was created in automatic mode. Start a new guided map below to choose paths after each page.
+                The previous map remains stored as history; this starts again from the application URL.
+              </p>
+            )}
+            {guidedMap && mode === "guided" && (
+              <DiscoveryPaths paths={savedBranches} selected={branches} onSelect={setBranches}
+                disabled={!!jobError || continueDiscovery.isPending || generatingTests}
+                onGenerateTests={(key) => onGenerateTests(key)}
+                generatingTests={generatingTests}
+                onRunAgain={(key) => continueDiscovery.mutate([key])} />
+            )}
+            {map && map.states.length > 0 && (
+              <div className="notice">
+                <p>You can generate tests now. Remaining paths do not need to be explored.</p>
+                <Button type="button" busy={generatingTests} onClick={() => onGenerateTests()}>
+                  Generate tests for discovered pages
+                </Button>
+                {!!generationError && <ErrorState error={generationError} />}
+              </div>
+            )}
             <label>
               Application URL
               <input
@@ -387,10 +450,9 @@ export default function Discovery({
               />
             </label>
             <p className="field-hint">
-              Discovery crawls the whole application. Workers share one map of
-              covered pages, so they do not recrawl the same screen. If time or
-              page limits stop the run, the graph is kept. Continue resumes from
-              that point; Start from scratch begins a new map.
+              Guided discovery starts with the landing page and waits for your next selection.
+              Return to any saved path later, or review the map to generate tests.
+              Inspecting a page does not establish that its functionality passes tests.
             </p>
 
             {(discover.error || continueDiscovery.error) && (
@@ -398,28 +460,28 @@ export default function Discovery({
             )}
 
             <div className="actions">
-              {resumable && (
+              {resumable && (mode === "guided" ? guidedMap : !guidedMap) && (
                 <Button
                   type="button"
                   busy={continueDiscovery.isPending}
-                  disabled={!!jobError}
-                  onClick={() => continueDiscovery.mutate()}
+                  disabled={!!jobError || generatingTests || (mode === "guided" && (!guidedMap || branches.length === 0))}
+                  onClick={() => continueDiscovery.mutate(undefined)}
                 >
                   <RefreshCw size={16} />
-                  Continue Discovery
+                  {mode === "guided" ? "Explore selected paths" : "Continue Discovery"}
                 </Button>
               )}
               <Button
                 type="submit"
                 busy={discover.isPending}
-                disabled={!!jobError}
+                disabled={!!jobError || generatingTests}
               >
                 {resumable || failed || partial ? (
                   <RefreshCw size={16} />
                 ) : (
                   <Radar size={16} />
                 )}
-                {resumable
+                {map && mode === "guided" ? "Start guided map from scratch" : resumable
                   ? "Start from Scratch"
                   : failed || partial
                     ? "Retry discovery"
@@ -427,7 +489,7 @@ export default function Discovery({
               </Button>
               {map && !running && (
                 <Button type="button" variant="secondary" onClick={onNext}>
-                  Finish
+                  Review map and generate tests
                 </Button>
               )}
             </div>
@@ -448,6 +510,7 @@ export default function Discovery({
                 failed_actions: [],
               }
             }
+            awaitingSelection={map.termination_reason === "AWAITING_BRANCH_SELECTION"}
             status={map.status}
             mapId={map.id}
           />

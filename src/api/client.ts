@@ -147,6 +147,7 @@ export const api = {
       worker_limit?: number;
       automatic_limits?: boolean;
       discovery_mode?:
+        | "guided"
         | "entry_points"
         | "auth_flow"
         | "modules"
@@ -158,6 +159,7 @@ export const api = {
       selected_auth_flows?: string[];
       selected_areas?: string[];
       selected_modules?: string[];
+      selected_branches?: string[];
       resume_application_map_id?: string;
       start_from_scratch?: boolean;
       /** credential_ref for the account to use for this crawl */
@@ -317,6 +319,7 @@ export const api = {
     generation_scope: "all" | "ungenerated" = "all",
     selected_area_ids: string[] = [],
     selected_module_ids: string[] = [],
+    selected_branch_keys: string[] = [],
   ) =>
     request<Generation>(`/test-cases/projects/${id}/generate`, {
       requirement_id,
@@ -325,6 +328,7 @@ export const api = {
       generation_scope,
       selected_area_ids,
       selected_module_ids,
+      ...(selected_branch_keys.length ? { selected_branch_keys } : {}),
     }),
 
   createTest: (
