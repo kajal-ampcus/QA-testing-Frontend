@@ -96,11 +96,6 @@ export function InputRequests({
             <strong>{request.page_title || (request.kind === "login" ? "Sign in" : "Form")}</strong>
             {request.page_url && <span className="field-hint">{request.page_url}</span>}
           </div>
-          {request.screenshot_ref && (
-            <a href={request.screenshot_ref} target="_blank" rel="noreferrer">
-              <img src={request.screenshot_ref} alt="" />
-            </a>
-          )}
           {request.status === "pending" ? (
             <>
               {request.fields.map((field) => (

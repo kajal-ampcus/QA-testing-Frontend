@@ -258,13 +258,7 @@ export function DiscoveryDiagnosticPanel({
             Artifact reference:{" "}
             <code className="diag-code">{diagnostic.screenshot_ref}</code>
           </p>
-          <a href={diagnostic.screenshot_ref} target="_blank" rel="noreferrer">
-            <img
-              src={diagnostic.screenshot_ref}
-              alt="Browser state when discovery stopped"
-              style={{ width: "100%", borderRadius: "8px", border: "1px solid var(--border)" }}
-            />
-          </a>
+          <p className="diag-fix-hint">Open the screenshot gallery to view this capture.</p>
         </Section>
       )}
 
@@ -374,13 +368,7 @@ export function DiscoveryDiagnosticPanel({
                     {fa.error}{fa.detail ? `: ${fa.detail}` : ""}
                   </p>
                   {fa.screenshot_ref && (
-                    <a href={fa.screenshot_ref} target="_blank" rel="noreferrer">
-                      <img
-                        src={fa.screenshot_ref}
-                        alt={`Failed action ${fa.action || i + 1}`}
-                        style={{ width: "100%", marginTop: "8px", borderRadius: "8px" }}
-                      />
-                    </a>
+                    <p className="diag-fix-hint">Screenshot available in the gallery.</p>
                   )}
                 </div>
               </div>

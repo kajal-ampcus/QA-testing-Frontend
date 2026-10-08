@@ -60,6 +60,7 @@ export interface AppState {
   reached_via: string[];
   elements: Record<string, unknown>[];
   evidence_ref?: string | null;
+  evidence_sha256?: string | null;
 }
 
 export interface AppMap {
@@ -78,6 +79,7 @@ export interface AppMap {
   discovery_checkpoint?: DiscoveryCheckpoint | null;
   test_generation_coverage?: Record<string, string[]>;
   project_test_generation_coverage?: Record<string, string[]>;
+  reviewed_fingerprints?: string[];
 }
 
 export interface DiscoveryCheckpoint {
@@ -122,6 +124,36 @@ export interface DiscoveryCheckpoint {
   in_progress_nodes: Record<string, unknown>[];
   completed_nodes: string[];
   input_requests?: DiscoveryInputRequest[];
+  credential_update_required?: boolean;
+  credential_ref?: string | null;
+}
+
+export interface SavedInputField {
+  key: string;
+  name: string;
+  sensitive: boolean;
+  preview: string;
+}
+
+export interface SavedInputProfile {
+  id: string;
+  page_key: string;
+  form_key: string;
+  credential_ref: string | null;
+  updated_at: string | null;
+  fields: SavedInputField[];
+}
+
+export interface MapVersionSummary {
+  id: string;
+  version: number;
+  status: string;
+  states: Array<{
+    fingerprint: string;
+    url_pattern: string;
+    evidence_ref?: string | null;
+    evidence_sha256?: string | null;
+  }>;
 }
 
 export interface DiscoveryInputField {

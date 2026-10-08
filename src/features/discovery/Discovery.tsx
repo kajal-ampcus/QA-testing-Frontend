@@ -25,6 +25,7 @@ import type { ApplicationGraphData } from "../application-map/graphLayout";
 import { DiscoveryDiagnosticPanel } from "./DiscoveryDiagnosticPanel";
 import { loginFailureNotice } from "../application-map/ApplicationMap";
 import { DiscoveryPaths } from "./DiscoveryPaths";
+import { SavedInputs } from "./SavedInputs";
 
 export default function Discovery({
   project,
@@ -545,10 +546,12 @@ export default function Discovery({
       {/* ── Right: sidebar ───────────────────────────────────────────── */}
       <aside>
         {/* Multi-role application access panel */}
+        <SavedInputs projectId={project.id} />
         <ApplicationAccess
           projectId={project.id}
           running={running}
           savedBadge={savedBadge}
+          promptUpdate={Boolean(map?.discovery_checkpoint?.credential_update_required)}
           selectedRef={selectedRef}
           onSelectRef={(ref) => {
             setSelectedRef(ref);

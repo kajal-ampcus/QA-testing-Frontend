@@ -264,15 +264,20 @@ function AccountRow({
   running,
   selected,
   onSelect,
+  promptUpdate = false,
 }: {
   account: ProjectAccount;
   projectId: string;
   running: boolean;
   selected: boolean;
   onSelect: (ref: string) => void;
+  promptUpdate?: boolean;
 }) {
   const client = useQueryClient();
-  const [editing, setEditing] = useState(false);
+  const [editing, setEditing] = useState(promptUpdate);
+  useEffect(() => {
+    if (promptUpdate) setEditing(true);
+  }, [promptUpdate]);
 
   const setDefault = useMutation({
     mutationFn: () => api.setDefaultAccount(projectId, account.credential_ref),
@@ -441,6 +446,7 @@ export function ApplicationAccess({
   savedBadge,
   selectedRef,
   onSelectRef,
+  promptUpdate = false,
 }: {
   projectId: string;
   /** Discovery is currently running — disable destructive actions */
@@ -451,6 +457,8 @@ export function ApplicationAccess({
   selectedRef: string | null;
   /** Callback when user picks an account for the run */
   onSelectRef: (ref: string | null) => void;
+  /** Saved credentials were rejected. Ask for an update instead of retrying. */
+  promptUpdate?: boolean;
 }) {
   const client = useQueryClient();
   const accounts = useQuery({
@@ -513,6 +521,12 @@ export function ApplicationAccess({
 
       {open && (
         <>
+          {promptUpdate && (
+            <div className="notice" role="alert">
+              <strong>Saved credentials were rejected</strong>
+              <p>Update the selected account. Discovery will not keep retrying these credentials.</p>
+            </div>
+          )}
           <p
             className="muted"
             style={{ fontSize: "12px", marginBottom: "16px" }}
@@ -551,6 +565,7 @@ export function ApplicationAccess({
                   projectId={projectId}
                   running={running}
                   selected={selectedRef === account.credential_ref}
+                  promptUpdate={promptUpdate && selectedRef === account.credential_ref}
                   onSelect={(ref) =>
                     onSelectRef(selectedRef === ref ? null : ref)
                   }

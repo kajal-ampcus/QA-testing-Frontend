@@ -15,6 +15,8 @@ import type {
   ExecutionReport,
   ExecutionRun,
   ExecutionTrigger,
+  SavedInputProfile,
+  MapVersionSummary,
 } from "../types/api";
 
 export class ApiError extends Error {
@@ -30,7 +32,7 @@ async function request<T>(
   path: string,
   body?: unknown,
   signal?: AbortSignal,
-  method?: "GET" | "POST" | "DELETE",
+  method?: "GET" | "POST" | "PATCH" | "DELETE",
 ): Promise<T> {
   const headers: Record<string, string> = {};
   if (body !== undefined) headers["Content-Type"] = "application/json";
@@ -194,6 +196,41 @@ export const api = {
       undefined,
       "DELETE",
     ),
+
+  savedInputs: (projectId: string, signal?: AbortSignal) =>
+    request<SavedInputProfile[]>(`/projects/${projectId}/saved-inputs`, undefined, signal),
+
+  updateSavedInput: (
+    projectId: string,
+    answerId: string,
+    fields: { key: string; value: string }[],
+  ) =>
+    request<SavedInputProfile>(
+      `/projects/${projectId}/saved-inputs/${answerId}`,
+      { fields },
+      undefined,
+      "PATCH",
+    ),
+
+  deleteSavedInput: (projectId: string, answerId: string) =>
+    request<void>(
+      `/projects/${projectId}/saved-inputs/${answerId}`,
+      undefined,
+      undefined,
+      "DELETE",
+    ),
+
+  mapVersions: (projectId: string, signal?: AbortSignal) =>
+    request<MapVersionSummary[]>(
+      `/application-maps/projects/${projectId}/versions`,
+      undefined,
+      signal,
+    ),
+
+  reviewScreenshot: (projectId: string, fingerprint: string) =>
+    request<void>(`/application-maps/projects/${projectId}/screenshot-reviews`, {
+      fingerprint,
+    }),
 
   submitDiscoveryInput: (
     mapId: string,
