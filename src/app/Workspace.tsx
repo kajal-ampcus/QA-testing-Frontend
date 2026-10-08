@@ -177,6 +177,7 @@ export default function Workspace({ id }: { id: string }) {
       scope: "all" | "ungenerated";
       areaIds: string[];
       moduleIds: string[];
+      branchKeys?: string[];
     }) =>
       api.generate(
         id,
@@ -186,6 +187,7 @@ export default function Workspace({ id }: { id: string }) {
         selection.scope,
         selection.areaIds,
         selection.moduleIds,
+        selection.branchKeys,
       ),
     () => navigateStage(5),
   );
@@ -423,6 +425,11 @@ export default function Workspace({ id }: { id: string }) {
                     writeStored(`arc:job:${id}`, job);
                   }}
                   onNext={() => navigateStage(3)}
+                  onGenerateTests={(branchKey) => {
+                    generation.mutate({ scope: "all", areaIds: [], moduleIds: [], branchKeys: branchKey ? [branchKey] : [] });
+                  }}
+                  generatingTests={generation.isPending}
+                  generationError={generation.error}
                 />
               )}{" "}
               {stage === 3 && map.data && (

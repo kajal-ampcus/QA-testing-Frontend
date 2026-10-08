@@ -427,6 +427,78 @@ async function fixture(
   });
   return { state, errors };
 }
+test("existing automatic map defaults to a fresh guided run", async ({ page }) => {
+  await fixture(page, { existing: true, approved: true, resumable: true });
+  await page.route("**/api/v1/automation/projects/p1", (route) => route.fulfill({ json: { generations: [] } }));
+  await page.route("**/api/v1/executions/projects/p1", (route) => route.fulfill({ json: { runs: [] } }));
+  await page.route("**/api/v1/projects/p1/credentials", (route) => route.fulfill({ json: [] }));
+  await page.route("**/api/v1/application-maps/projects/p1/discover", (route) => route.fulfill({ status: 202, json: { job_id: "job-1" } }));
+  await page.goto("/projects/p1?stage=2");
+  await expect(page.getByRole("combobox", { name: "Exploration mode" })).toHaveValue("guided");
+  await expect(page.getByRole("button", { name: "Continue Discovery" })).toHaveCount(0);
+  const submission = page.waitForRequest((request) => request.method() === "POST" && request.url().endsWith("/discover"));
+  await page.getByRole("button", { name: "Start guided map from scratch" }).click();
+  const body = (await submission).postDataJSON();
+  expect(body).toMatchObject({ discovery_mode: "guided", start_from_scratch: true });
+  expect(body.resume_application_map_id).toBeUndefined();
+});
+
+for (const action of ["select", "rerun", "generate"] as const) {
+test(`guided discovery grouped paths persist and ${action} submits only its path`, async ({ page }, testInfo) => {
+  const { state } = await fixture(page, { existing: true, approved: true, map: true });
+  state.map = {
+    ...structuredClone(map), status: "PARTIAL", termination_reason: "AWAITING_BRANCH_SELECTION",
+    diagnostic_evidence: { auth_attempted: false, auth_succeeded: false, login_error: null,
+      screenshot_ref: null, termination_detail: "Selected pages were inspected.", console_errors: [], network_errors: [], failed_actions: [] },
+    discovery_checkpoint: {
+      version: 1,
+      configuration: { mode: "guided", selected_areas: [], selected_modules: [],
+        max_pages: 150, max_depth: 6, max_duration_seconds: 900, worker_limit: 1, automatic_limits: false },
+      completed_nodes: [], pending_nodes: [], failed_nodes: [], in_progress_nodes: [],
+      jobs: [
+        { key: "products", status: "completed", path: [{ role: "link", name: "Products" }] },
+        { key: "clothes", status: "available", path: [{ role: "link", name: "Products" }, { role: "link", name: "Clothing" }] },
+        { key: "about", status: "available", path: [{ role: "link", name: "About" }] },
+      ],
+    },
+  };
+  await page.route("**/api/v1/automation/projects/p1", (route) => route.fulfill({ json: { generations: [] } }));
+  await page.route("**/api/v1/executions/projects/p1", (route) => route.fulfill({ json: { runs: [] } }));
+  await page.route("**/api/v1/projects/p1/credentials", (route) => route.fulfill({ json: [] }));
+  await page.route("**/api/v1/application-maps/projects/p1/discover", (route) => route.fulfill({ status: 202, json: { job_id: "job-1" } }));
+  await page.route("**/api/v1/test-cases/projects/p1/generate", (route) => route.fulfill({ status: 422, json: { detail: "Test fixture: generation stopped after scope validation" } }));
+  await page.goto("/projects/p1?stage=2");
+  await expect(page.getByText("Selected pages discovered successfully")).toBeVisible();
+  await expect(page.getByText(/Discovery completed with issues/)).toHaveCount(0);
+  await expect(page.getByRole("checkbox", { name: /Clothing/ })).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole("checkbox", { name: /About/ })).toBeVisible();
+  await expect(page.getByRole("checkbox", { name: "Products", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Run Products again" })).toBeVisible();
+  await page.getByRole("combobox", { name: "Filter discovery paths" }).selectOption("completed");
+  await expect(page.getByRole("checkbox", { name: /Clothing/ })).toHaveCount(0);
+  await page.getByRole("combobox", { name: "Filter discovery paths" }).selectOption("all");
+  await page.getByRole("textbox", { name: "Search discovery paths" }).fill("Clothing");
+  await expect(page.getByRole("checkbox", { name: /About/ })).toHaveCount(0);
+  await page.getByRole("textbox", { name: "Search discovery paths" }).fill("");
+  const panel = page.getByRole("region", { name: "Saved discovery paths" });
+  await panel.screenshot({ path: testInfo.outputPath("grouped-paths.png") });
+  if (action === "generate") {
+    const submission = page.waitForRequest((request) => request.method() === "POST" && request.url().endsWith("/generate"));
+    await page.getByRole("button", { name: "Generate tests for Products", exact: true }).click();
+    expect((await submission).postDataJSON()).toMatchObject({ application_map_id: "m1", selected_branch_keys: ["products"] });
+    await expect(page.getByText("Test fixture: generation stopped after scope validation")).toBeVisible();
+    return;
+  }
+  if (action === "select") await page.getByRole("checkbox", { name: /Clothing/ }).check();
+  const submission = page.waitForRequest((request) => request.method() === "POST" && request.url().endsWith("/discover"));
+  await page.getByRole("button", { name: action === "select" ? "Explore selected paths" : "Run Products again" }).click();
+  expect((await submission).postDataJSON()).toMatchObject({
+    discovery_mode: "guided", resume_application_map_id: "m1", selected_branches: [action === "select" ? "clothes" : "products"],
+  });
+});
+}
+
 test("complete journey: create, clarify, approve, discover, map, generate, inspect", async ({
   page,
 }, testInfo) => {

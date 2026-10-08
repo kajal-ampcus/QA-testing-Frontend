@@ -81,6 +81,12 @@ export interface AppMap {
 }
 
 export interface DiscoveryCheckpoint {
+  jobs?: Array<{
+    key: string;
+    status: string;
+    path: Array<{ role: string; name: string; url?: string | null; value?: string | null }>;
+    parent_fingerprint?: string | null;
+  }>;
   progress?: Record<string, string | number>;
   live_view?: {
     url?: string;
@@ -92,6 +98,7 @@ export interface DiscoveryCheckpoint {
   version: number;
   configuration: {
     mode:
+      | "guided"
       | "entry_points"
       | "auth_flow"
       | "modules"
