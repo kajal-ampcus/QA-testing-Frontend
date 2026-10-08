@@ -425,11 +425,6 @@ export default function Workspace({ id }: { id: string }) {
                     writeStored(`arc:job:${id}`, job);
                   }}
                   onNext={() => navigateStage(3)}
-                  onGenerateTests={(branchKey) => {
-                    generation.mutate({ scope: "all", areaIds: [], moduleIds: [], branchKeys: branchKey ? [branchKey] : [] });
-                  }}
-                  generatingTests={generation.isPending}
-                  generationError={generation.error}
                 />
               )}{" "}
               {stage === 3 && map.data && (

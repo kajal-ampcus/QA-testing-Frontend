@@ -124,7 +124,7 @@ export function DiscoveryDiagnosticPanel({
 
   if (awaitingSelection && totalIssues === 0 && !isFailed) {
     return <div className="notice" role="status"><strong>Selected pages discovered successfully</strong>
-      <p>Choose another path or generate tests for a completed path above. Unexplored paths are saved for later.</p>
+      <p>Choose another path, or review the Application map to generate tests from the pages discovered so far. Unexplored paths are saved for later.</p>
     </div>;
   }
 

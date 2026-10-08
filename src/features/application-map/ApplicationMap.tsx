@@ -294,21 +294,21 @@ export default function ApplicationMap({
       </Card>
       <NextAction
         title={
-          map.status === "COMPLETE"
+          ["COMPLETE", "PARTIAL"].includes(map.status) && map.states.length > 0
             ? "Turn observations into test coverage"
-            : "Complete discovery to continue"
+            : "Discover a page to continue"
         }
         description={
-          map.status === "COMPLETE"
-            ? "Design test cases using your approved requirement and this application map."
-            : "Test generation needs a complete map. Review discovery details and retry."
+          ["COMPLETE", "PARTIAL"].includes(map.status) && map.states.length > 0
+            ? "Generate test cases from the pages discovered so far. You can explore remaining paths and generate more tests later."
+            : "Test generation needs saved observations from a finished discovery step. Review discovery to continue."
         }
         label={
-          map.status === "COMPLETE"
-            ? "Continue to test generation"
+          ["COMPLETE", "PARTIAL"].includes(map.status) && map.states.length > 0
+            ? "Generate test cases"
             : "Review discovery"
         }
-        onClick={map.status === "COMPLETE" ? onNext : onRetry}
+        onClick={["COMPLETE", "PARTIAL"].includes(map.status) && map.states.length > 0 ? onNext : onRetry}
       />
       {selected && (
         <DetailDrawer

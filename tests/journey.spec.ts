@@ -459,6 +459,8 @@ test(`guided discovery grouped paths persist and ${action} submits only its path
         { key: "products", status: "completed", path: [{ role: "link", name: "Products" }] },
         { key: "clothes", status: "available", path: [{ role: "link", name: "Products" }, { role: "link", name: "Clothing" }] },
         { key: "about", status: "available", path: [{ role: "link", name: "About" }] },
+        { key: "contact", status: "completed", path: [{ role: "link", name: "Contact" }] },
+        { key: "products-contact", status: "available", path: [{ role: "link", name: "Products" }, { role: "link", name: "Contact" }] },
       ],
     },
   };
@@ -475,18 +477,39 @@ test(`guided discovery grouped paths persist and ${action} submits only its path
   await expect(page.getByRole("checkbox", { name: /About/ })).toBeVisible();
   await expect(page.getByRole("checkbox", { name: "Products", exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Run Products again" })).toBeVisible();
+  await expect(page.getByText("Same label completed via Landing; this route is separate.")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Run Contact again", exact: true })).toBeVisible();
+  await expect(page.getByRole("checkbox", { name: /Contact.*From: Landing \/ Products/ })).toBeVisible();
+  const sectionAll = page.getByRole("checkbox", { name: "Select all remaining paths in Landing / Products", exact: true });
+  await page.getByRole("checkbox", { name: /About/ }).check();
+  await page.getByRole("checkbox", { name: /Clothing/ }).check();
+  await expect(sectionAll).toHaveJSProperty("indeterminate", true);
+  await sectionAll.check();
+  await expect(page.getByRole("checkbox", { name: /Contact.*From: Landing \/ Products/ })).toBeChecked();
+  await expect(page.getByText("3 selected", { exact: true })).toBeVisible();
+  await sectionAll.uncheck();
+  await expect(page.getByRole("checkbox", { name: /About/ })).toBeChecked();
+  await expect(page.getByRole("checkbox", { name: /Clothing/ })).not.toBeChecked();
+  await page.getByRole("button", { name: "Clear selection", exact: true }).click();
   await page.getByRole("combobox", { name: "Filter discovery paths" }).selectOption("completed");
   await expect(page.getByRole("checkbox", { name: /Clothing/ })).toHaveCount(0);
   await page.getByRole("combobox", { name: "Filter discovery paths" }).selectOption("all");
   await page.getByRole("textbox", { name: "Search discovery paths" }).fill("Clothing");
   await expect(page.getByRole("checkbox", { name: /About/ })).toHaveCount(0);
+  await sectionAll.check();
+  await expect(page.getByText("1 selected", { exact: true })).toBeVisible();
+  await sectionAll.uncheck();
   await page.getByRole("textbox", { name: "Search discovery paths" }).fill("");
   const panel = page.getByRole("region", { name: "Saved discovery paths" });
   await panel.screenshot({ path: testInfo.outputPath("grouped-paths.png") });
   if (action === "generate") {
+    await expect(page.getByRole("button", { name: /Generate tests/ })).toHaveCount(0);
+    await page.getByRole("button", { name: "Application map Ready to review" }).click();
+    await expect(page.getByText("Complete discovery to continue")).toHaveCount(0);
+    await page.getByRole("button", { name: "Generate test cases", exact: true }).click();
     const submission = page.waitForRequest((request) => request.method() === "POST" && request.url().endsWith("/generate"));
-    await page.getByRole("button", { name: "Generate tests for Products", exact: true }).click();
-    expect((await submission).postDataJSON()).toMatchObject({ application_map_id: "m1", selected_branch_keys: ["products"] });
+    await page.getByRole("button", { name: "Generate test cases", exact: true }).click();
+    expect((await submission).postDataJSON()).toMatchObject({ application_map_id: "m1", generation_scope: "all" });
     await expect(page.getByText("Test fixture: generation stopped after scope validation")).toBeVisible();
     return;
   }

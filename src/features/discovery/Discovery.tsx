@@ -39,9 +39,6 @@ export default function Discovery({
   clearJob,
   onStopped,
   refreshMap,
-  onGenerateTests,
-  generatingTests,
-  generationError,
 }: {
   project: Project;
   requirement: Requirement;
@@ -54,9 +51,6 @@ export default function Discovery({
   clearJob: () => void;
   onStopped: () => void;
   refreshMap: () => void;
-  onGenerateTests: (branchKey?: string) => void;
-  generatingTests: boolean;
-  generationError: unknown;
 }) {
   const [url, setUrl] = useState(project.application_url || "");
   const [mode, setMode] = useState<"guided" | "complete">("guided");
@@ -336,7 +330,6 @@ export default function Discovery({
           <form
             onSubmit={(e) => {
               e.preventDefault();
-              if (generatingTests) return;
               discover.mutate();
             }}
           >
@@ -355,19 +348,8 @@ export default function Discovery({
             )}
             {guidedMap && mode === "guided" && (
               <DiscoveryPaths paths={savedBranches} selected={branches} onSelect={setBranches}
-                disabled={!!jobError || continueDiscovery.isPending || generatingTests}
-                onGenerateTests={(key) => onGenerateTests(key)}
-                generatingTests={generatingTests}
+                disabled={!!jobError || continueDiscovery.isPending}
                 onRunAgain={(key) => continueDiscovery.mutate([key])} />
-            )}
-            {map && map.states.length > 0 && (
-              <div className="notice">
-                <p>You can generate tests now. Remaining paths do not need to be explored.</p>
-                <Button type="button" busy={generatingTests} onClick={() => onGenerateTests()}>
-                  Generate tests for discovered pages
-                </Button>
-                {!!generationError && <ErrorState error={generationError} />}
-              </div>
             )}
             <label>
               Application URL
@@ -477,7 +459,7 @@ export default function Discovery({
                 <Button
                   type="button"
                   busy={continueDiscovery.isPending}
-                  disabled={!!jobError || generatingTests || (mode === "guided" && (!guidedMap || branches.length === 0))}
+                  disabled={!!jobError || (mode === "guided" && (!guidedMap || branches.length === 0))}
                   onClick={() => continueDiscovery.mutate(undefined)}
                 >
                   <RefreshCw size={16} />
@@ -487,7 +469,7 @@ export default function Discovery({
               <Button
                 type="submit"
                 busy={discover.isPending}
-                disabled={!!jobError || generatingTests}
+                disabled={!!jobError}
               >
                 {resumable || failed || partial ? (
                   <RefreshCw size={16} />
@@ -502,7 +484,7 @@ export default function Discovery({
               </Button>
               {map && !running && (
                 <Button type="button" variant="secondary" onClick={onNext}>
-                  Review map and generate tests
+                  Review application map
                 </Button>
               )}
             </div>
