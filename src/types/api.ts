@@ -114,6 +114,27 @@ export interface DiscoveryCheckpoint {
   failed_nodes: Record<string, unknown>[];
   in_progress_nodes: Record<string, unknown>[];
   completed_nodes: string[];
+  input_requests?: DiscoveryInputRequest[];
+}
+
+export interface DiscoveryInputField {
+  key: string;
+  role: string;
+  name: string;
+  input_type?: string;
+  required?: boolean;
+  options?: string[] | null;
+}
+
+export interface DiscoveryInputRequest {
+  id: string;
+  status: string;
+  kind: string;
+  page_url?: string;
+  page_title?: string;
+  screenshot_ref?: string | null;
+  fields: DiscoveryInputField[];
+  submit?: { role?: string; name?: string } | null;
 }
 
 export interface DiscoveryArea {

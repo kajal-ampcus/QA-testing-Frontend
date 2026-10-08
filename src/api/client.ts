@@ -193,6 +193,16 @@ export const api = {
       "DELETE",
     ),
 
+  submitDiscoveryInput: (
+    mapId: string,
+    requestId: string,
+    fields: { key: string; value: string }[],
+  ) =>
+    request<{ id: string; status: string }>(
+      `/application-maps/${mapId}/input-requests/${encodeURIComponent(requestId)}`,
+      { fields },
+    ),
+
   // ── Credentials (multi-account) ───────────────────────────
   /**
    * Save a new named test account.

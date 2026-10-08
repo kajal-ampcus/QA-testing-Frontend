@@ -4054,3 +4054,29 @@ select,
     justify-items: center;
   }
 }
+
+.input-requests {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 16px;
+}
+.input-requests h3 {
+  margin: 0;
+}
+.input-request {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid #d7e0d4;
+  border-radius: 12px;
+}
+.input-request img {
+  max-width: 100%;
+  border-radius: 8px;
+}
+.input-request select,
+.input-request input {
+  width: 100%;
+}

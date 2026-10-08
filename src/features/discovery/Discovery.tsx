@@ -19,6 +19,7 @@ import {
   Timeline,
 } from "../../components/ui";
 import { ApplicationAccess } from "./ApplicationAccess";
+import { InputRequests } from "./InputRequests";
 import LiveDiscoveryGraph from "./LiveDiscoveryGraph";
 import type { ApplicationGraphData } from "../application-map/graphLayout";
 import { DiscoveryDiagnosticPanel } from "./DiscoveryDiagnosticPanel";
@@ -35,6 +36,7 @@ export default function Discovery({
   refreshJob,
   clearJob,
   onStopped,
+  refreshMap,
 }: {
   project: Project;
   requirement: Requirement;
@@ -46,6 +48,7 @@ export default function Discovery({
   refreshJob: () => void;
   clearJob: () => void;
   onStopped: () => void;
+  refreshMap: () => void;
 }) {
   const [url, setUrl] = useState(project.application_url || "");
   const [pages, setPages] = useState(
@@ -222,6 +225,15 @@ export default function Discovery({
             {stopDiscovery.error && <ErrorState error={stopDiscovery.error} />}
           </>
         ) : null}
+
+        {map?.discovery_checkpoint?.input_requests && (
+          <InputRequests
+            mapId={map.id}
+            requests={map.discovery_checkpoint.input_requests}
+            running={running}
+            onSubmitted={refreshMap}
+          />
+        )}
 
         {/* Map metrics */}
         {map?.discovery_checkpoint?.progress && (

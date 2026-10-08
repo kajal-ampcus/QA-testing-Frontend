@@ -415,6 +415,9 @@ export default function Workspace({ id }: { id: string }) {
                     void project.refetch();
                     void map.refetch();
                   }}
+                  refreshMap={() => {
+                    void map.refetch();
+                  }}
                   onStarted={(job) => {
                     setJobId(job);
                     writeStored(`arc:job:${id}`, job);
