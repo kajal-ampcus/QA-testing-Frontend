@@ -70,18 +70,18 @@ export default function Discovery({
   const [workerLimit, setWorkerLimit] = useState(
     map?.discovery_checkpoint?.configuration.worker_limit ?? 1,
   );
+  // Optional pre-discovery account. Leaving this empty uses the dynamic
+  // credential request when the live login form is reached.
+  const [selectedRef, setSelectedRef] = useState<string | null>(
+    project.credential_ref ?? null,
+  );
+  const [savedBadge, setSavedBadge] = useState(!!project.credential_ref);
 
   /**
    * credential_ref of the account chosen for this run.
    * Null means "not selected yet" — the ApplicationAccess panel auto-selects
    * the default account when accounts load.
    */
-  const [selectedRef, setSelectedRef] = useState<string | null>(
-    project.credential_ref ?? null,
-  );
-
-  /** Whether any account has been saved (for the "Configured" badge) */
-  const [savedBadge, setSavedBadge] = useState(!!project.credential_ref);
 
   useEffect(() => {
     const configuration = map?.discovery_checkpoint?.configuration;
@@ -258,6 +258,7 @@ export default function Discovery({
             requests={map.discovery_checkpoint.input_requests}
             running={running}
             onSubmitted={refreshMap}
+            onResumed={onStarted}
           />
         )}
 
@@ -362,31 +363,15 @@ export default function Discovery({
               />
             </label>
 
-            {/* Selected account summary */}
             {selectedRef ? (
               <div className="focus-requirement">
-                <span className="badge good">
-                  <i />
-                  Test account
-                </span>
-                <span style={{ fontSize: "11px" }}>
-                  Running as{" "}
-                  <strong>
-                    {/* role name will be filled by ApplicationAccess below */}
-                    {selectedRef.split(":").pop() ?? selectedRef}
-                  </strong>
-                </span>
+                <span className="badge good"><i /> Test account</span>
+                <span style={{ fontSize: "11px" }}>A saved account will sign in before discovery.</span>
               </div>
             ) : (
               <div className="focus-requirement">
-                <span className="badge warn">
-                  <i />
-                  No account selected
-                </span>
-                <span style={{ fontSize: "11px" }}>
-                  Add a test account in Application access to enable
-                  authenticated discovery.
-                </span>
+                <span className="badge warn"><i /> No account selected</span>
+                <span style={{ fontSize: "11px" }}>Discovery will ask for login values only if the application requires them.</span>
               </div>
             )}
 
@@ -527,7 +512,6 @@ export default function Discovery({
 
       {/* ── Right: sidebar ───────────────────────────────────────────── */}
       <aside>
-        {/* Multi-role application access panel */}
         <SavedInputs projectId={project.id} />
         <ApplicationAccess
           projectId={project.id}
@@ -555,9 +539,7 @@ export default function Discovery({
                 title: job ? human(job.status) : "Application discovery",
                 detail: running
                   ? "Live worker status"
-                  : selectedRef
-                    ? "Ready to discover"
-                    : "Add a test account first",
+                  : "Ready to discover",
                 done: !running && map?.status === "COMPLETE",
               },
               {

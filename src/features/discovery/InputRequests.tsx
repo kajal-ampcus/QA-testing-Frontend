@@ -10,6 +10,7 @@ function fieldControl(
   onChange: (next: string) => void,
 ) {
   const id = `${request.id}-${field.key}`;
+  const inputType = (field.input_type || "").toLowerCase();
   if (field.options && field.options.length > 0) {
     return (
       <select id={id} value={value} onChange={(event) => onChange(event.target.value)}>
@@ -22,7 +23,24 @@ function fieldControl(
       </select>
     );
   }
-  const type = /password/i.test(field.input_type || field.name) ? "password" : "text";
+  const type = /password/i.test(field.input_type || field.name)
+    ? "password"
+    : ["email", "number", "date", "file"].includes(inputType)
+      ? inputType
+      : "text";
+  if (inputType === "textarea") {
+    return <textarea id={id} value={value} onChange={(event) => onChange(event.target.value)} />;
+  }
+  if (["checkbox", "radio"].includes(inputType)) {
+    return (
+      <input
+        id={id}
+        type={inputType}
+        checked={value === "true"}
+        onChange={(event) => onChange(event.target.checked ? "true" : "")}
+      />
+    );
+  }
   return (
     <input
       id={id}
@@ -39,13 +57,15 @@ export function InputRequests({
   requests,
   running,
   onSubmitted,
+  onResumed,
 }: {
   mapId: string;
   requests: DiscoveryInputRequest[];
   running: boolean;
   onSubmitted: () => void;
+  onResumed: (jobId: string) => void;
 }) {
-  const visible = requests.filter((request) => request.status !== "applied");
+  const visible = requests.filter((request) => request.status === "pending");
   const [values, setValues] = useState<Record<string, Record<string, string>>>({});
   const [error, setError] = useState<unknown>(null);
   const [savingId, setSavingId] = useState<string | null>(null);
@@ -57,7 +77,7 @@ export function InputRequests({
     setSavingId(request.id);
     setError(null);
     try {
-      await api.submitDiscoveryInput(
+      const response = await api.submitDiscoveryInput(
         mapId,
         request.id,
         request.fields.map((field) => ({
@@ -66,6 +86,7 @@ export function InputRequests({
         })),
       );
       onSubmitted();
+      if (response.job_id) onResumed(response.job_id);
     } catch (caught) {
       setError(caught);
     } finally {
@@ -95,6 +116,7 @@ export function InputRequests({
           <div>
             <strong>{request.page_title || (request.kind === "login" ? "Sign in" : "Form")}</strong>
             {request.page_url && <span className="field-hint">{request.page_url}</span>}
+            {request.validation_error && <p className="error">{request.validation_error}</p>}
           </div>
           {request.status === "pending" ? (
             <>

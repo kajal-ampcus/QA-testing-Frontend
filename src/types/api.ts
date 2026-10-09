@@ -172,6 +172,7 @@ export interface DiscoveryInputRequest {
   page_url?: string;
   page_title?: string;
   screenshot_ref?: string | null;
+  validation_error?: string;
   fields: DiscoveryInputField[];
   submit?: { role?: string; name?: string } | null;
 }

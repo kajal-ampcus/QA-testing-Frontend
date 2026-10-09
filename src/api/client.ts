@@ -237,7 +237,7 @@ export const api = {
     requestId: string,
     fields: { key: string; value: string }[],
   ) =>
-    request<{ id: string; status: string }>(
+    request<{ id: string; status: string; job_id?: string | null }>(
       `/application-maps/${mapId}/input-requests/${encodeURIComponent(requestId)}`,
       { fields },
     ),
