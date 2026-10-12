@@ -287,8 +287,16 @@ function AccountRow({
 
   const del = useMutation({
     mutationFn: () => api.deleteAccount(projectId, account.credential_ref),
-    onSuccess: () =>
-      client.invalidateQueries({ queryKey: ["accounts", projectId] }),
+    onSuccess: async () => {
+      client.setQueryData<ProjectAccount[]>(["accounts", projectId], (current) =>
+        current?.filter((item) => item.credential_ref !== account.credential_ref),
+      );
+      await Promise.all([
+        client.invalidateQueries({ queryKey: ["accounts", projectId] }),
+        client.invalidateQueries({ queryKey: ["workspace", projectId] }),
+        client.invalidateQueries({ queryKey: ["projects"] }),
+      ]);
+    },
   });
 
   if (editing) {
@@ -412,9 +420,11 @@ function AccountRow({
             <Pencil size={15} />
           </button>
           <button
+            type="button"
             className="icon-button"
             title="Delete account"
-            disabled={running || del.isPending || account.is_default}
+            aria-label={`Delete ${account.label} account`}
+            disabled={running || del.isPending}
             onClick={() => {
               if (
                 confirm(
@@ -470,12 +480,16 @@ export function ApplicationAccess({
   const [open, setOpen] = useState(true);
 
   const list: ProjectAccount[] = accounts.data ?? [];
-  const hasAccounts = list.length > 0 || savedBadge;
+  const hasAccounts = accounts.isSuccess ? list.length > 0 : savedBadge;
 
   // Keep the selected account on an active row. Saving again retires the
   // previous credential id, so a stale selection must move to the new one.
   useEffect(() => {
-    if (!accounts.isSuccess || list.length === 0) return;
+    if (!accounts.isSuccess) return;
+    if (list.length === 0) {
+      if (selectedRef !== null) onSelectRef(null);
+      return;
+    }
     const stillActive =
       !!selectedRef && list.some((account) => account.credential_ref === selectedRef);
     if (stillActive) return;

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Radar, RefreshCw, Square } from "lucide-react";
 import { api, ApiError } from "../../api/client";
 import { useAction } from "../../hooks/useAction";
@@ -52,6 +53,7 @@ export default function Discovery({
   onStopped: () => void;
   refreshMap: () => void;
 }) {
+  const queryClient = useQueryClient();
   const [url, setUrl] = useState(project.application_url || "");
   const [mode, setMode] = useState<"guided" | "complete">("guided");
   const [branches, setBranches] = useState<string[]>([]);
@@ -257,7 +259,12 @@ export default function Discovery({
             mapId={map.id}
             requests={map.discovery_checkpoint.input_requests}
             running={running}
-            onSubmitted={refreshMap}
+            onSubmitted={() => {
+              refreshMap();
+              void queryClient.invalidateQueries({ queryKey: ["accounts", project.id] });
+              void queryClient.invalidateQueries({ queryKey: ["saved-inputs", project.id] });
+              void queryClient.invalidateQueries({ queryKey: ["workspace", project.id] });
+            }}
             onResumed={onStarted}
           />
         )}
@@ -521,7 +528,7 @@ export default function Discovery({
           selectedRef={selectedRef}
           onSelectRef={(ref) => {
             setSelectedRef(ref);
-            if (ref) setSavedBadge(true);
+            setSavedBadge(!!ref);
           }}
         />
 
