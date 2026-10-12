@@ -468,6 +468,7 @@ export default function Automation({
 
         {result && (
           <Result
+            key={`${projectId}:${result.generation_id}`}
             result={result}
             projectId={projectId}
             file={file}
@@ -543,9 +544,11 @@ export default function Automation({
 function SuiteActions({
   projectId,
   result,
+  beforeAccess,
 }: {
   projectId: string;
   result: AutomationGeneration;
+  beforeAccess: () => Promise<void>;
 }) {
   const [downloading, setDownloading] = useState(false);
   const [downloadError, setDownloadError] = useState("");
@@ -560,8 +563,8 @@ function SuiteActions({
             setDownloadError("");
             setDownloading(true);
 
-            void api
-              .downloadAutomation(projectId, result.generation_id)
+            void beforeAccess()
+              .then(() => api.downloadAutomation(projectId, result.generation_id))
               .catch((error: unknown) => {
                 setDownloadError(
                   error instanceof Error
@@ -580,6 +583,13 @@ function SuiteActions({
           <a
             className="button secondary"
             href={result.vscode_url}
+            onClick={(event) => {
+              event.preventDefault();
+              setDownloadError("");
+              void beforeAccess()
+                .then(() => { window.location.href = result.vscode_url!; })
+                .catch((error: unknown) => setDownloadError(error instanceof Error ? error.message : "Save failed."));
+            }}
           >
             Open in VS Code
           </a>
@@ -751,12 +761,61 @@ function Result({
   preview?: string;
   onFile: (path: string) => void;
 }) {
+  const [editedSources, setEditedSources] = useState<Record<string, string>>({});
+  const pendingSources = useRef<Record<string, { path: string; content: string }>>({});
+  const saveQueue = useRef<Promise<void>>(Promise.resolve());
+  const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (autoSaveTimer.current !== null) clearTimeout(autoSaveTimer.current);
+  }, []);
+  const [saveError, setSaveError] = useState<Error | null>(null);
+  const [saveStatus, setSaveStatus] = useState("");
+  const sourceKey = `${projectId}:${result.generation_id}:${file}`;
+  const source = editedSources[sourceKey] ?? preview ?? "";
+  const updateSource = (content: string) => {
+    setEditedSources((current) => ({ ...current, [sourceKey]: content }));
+    pendingSources.current[file] = { path: file, content };
+    setSaveStatus("Unsaved changes");
+    if (autoSaveTimer.current !== null) clearTimeout(autoSaveTimer.current);
+    autoSaveTimer.current = setTimeout(() => {
+      autoSaveTimer.current = null;
+      void saveSources().catch(() => {});
+    }, 500);
+  };
+  const saveSources = () => {
+    if (autoSaveTimer.current !== null) {
+      clearTimeout(autoSaveTimer.current);
+      autoSaveTimer.current = null;
+    }
+    const operation = saveQueue.current.catch(() => {}).then(async () => {
+      const files = Object.values(pendingSources.current);
+      if (!files.length) return;
+      setSaveStatus("Saving...");
+      setSaveError(null);
+      try {
+        await api.saveAutomationSources(projectId, result.generation_id, files);
+        for (const saved of files) {
+          if (pendingSources.current[saved.path]?.content === saved.content) {
+            delete pendingSources.current[saved.path];
+          }
+        }
+        setSaveStatus(Object.keys(pendingSources.current).length ? "Unsaved changes" : "Changes saved");
+      } catch (error) {
+        setSaveStatus("Changes could not be saved");
+        setSaveError(error instanceof Error ? error : new Error("Save failed."));
+        throw error;
+      }
+    });
+    saveQueue.current = operation;
+    return operation;
+  };
+
   return (
     <Card>
       <div className="automation-result-head">
         <p className="automation-banner">{result.label}</p>
 
-        <SuiteActions projectId={projectId} result={result} />
+        <SuiteActions projectId={projectId} result={result} beforeAccess={saveSources} />
       </div>
 
       <div className="automation-status">
@@ -849,10 +908,35 @@ function Result({
           <SuiteFiles paths={result.file_tree} file={file} onFile={onFile} />
         </div>
 
-        <pre className="source-preview">
-          {preview || "Select a file to preview its source."}
-        </pre>
+        <textarea
+          key={sourceKey}
+          className="source-preview automation-source-editor"
+          aria-label={file ? `Edit source code for ${file}` : "Source code editor"}
+          value={source}
+          placeholder="Select a file to edit its source."
+          disabled={preview === undefined}
+          spellCheck={false}
+          autoCapitalize="off"
+          autoCorrect="off"
+          wrap="off"
+          onChange={(event) => updateSource(event.target.value)}
+          onBlur={() => { void saveSources().catch(() => {}); }}
+          onKeyDown={(event) => {
+            if (event.key !== "Tab" || event.shiftKey) return;
+            event.preventDefault();
+            const editor = event.currentTarget;
+            const start = editor.selectionStart;
+            const end = editor.selectionEnd;
+            updateSource(source.slice(0, start) + "  " + source.slice(end));
+            requestAnimationFrame(() => {
+              editor.setSelectionRange(start + 2, start + 2);
+            });
+          }}
+        />
       </div>
+
+      {saveStatus && <p className="muted" role="status">{saveStatus}</p>}
+      {saveError && <ErrorState error={saveError} />}
 
       <p className="muted">
         {(result.language ?? "typescript") === "typescript" &&

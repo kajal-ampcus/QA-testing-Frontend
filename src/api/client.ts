@@ -439,6 +439,9 @@ export const api = {
       signal,
     ),
 
+  saveAutomationSources: (projectId: string, generationId: string, files: { path: string; content: string }[]) =>
+    request<void>(`/automation/projects/${projectId}/generations/${generationId}/sources`, { files }, undefined, "PATCH"),
+
   generateAutomation: (
     projectId: string,
     testCaseIds: string[],
