@@ -70,7 +70,7 @@ export function InputRequests({
   onResumed: (jobId: string) => void;
   onContinue: (branches: string[], credentialRef?: string | null) => Promise<void>;
 }) {
-  const visible = requests.filter((request) => request.status === "pending");
+  const visible = requests.filter((request) => request.status === "pending" || request.kind === "login_choice");
   const [values, setValues] = useState<Record<string, Record<string, string>>>({});
   const [error, setError] = useState<unknown>(null);
   const [savingId, setSavingId] = useState<string | null>(null);
@@ -135,10 +135,10 @@ export function InputRequests({
             {request.page_url && <span className="field-hint">{request.page_url}</span>}
             {request.validation_error && <p className="error">{request.validation_error}</p>}
           </div>
-          {request.status === "pending" ? (
+          {request.status === "pending" || request.kind === "login_choice" ? (
             <>
               {request.kind === "login_choice" && (
-                <label className="field"><span>Which login do you want to discover?</span>
+                <label className="field"><span>{request.status === "applied" ? "Discover another login — existing results are kept" : "Which login do you want to discover?"}</span>
                   <select required value={choices[request.id] || ""} onChange={(event) => setChoices({ ...choices, [request.id]: event.target.value })}>
                     <option value="">Select a login</option>
                     {request.choices?.map((choice) => <option key={choice.id} value={choice.id}>{choice.label}</option>)}

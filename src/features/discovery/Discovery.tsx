@@ -78,6 +78,8 @@ export default function Discovery({
     project.credential_ref ?? null,
   );
   const [savedBadge, setSavedBadge] = useState(!!project.credential_ref);
+  const switchingAccount = !!guidedMap &&
+    (map?.discovery_checkpoint?.configuration.credential_ref ?? null) !== selectedRef;
 
   /**
    * credential_ref of the account chosen for this run.
@@ -268,7 +270,7 @@ export default function Discovery({
             }}
             onResumed={onStarted}
             onContinue={async (selectedBranches, credentialRef) => {
-              const nextRef = credentialRef ?? map.discovery_checkpoint?.configuration.credential_ref ?? null;
+              const nextRef = credentialRef !== undefined ? credentialRef : map.discovery_checkpoint?.configuration.credential_ref ?? null;
               setSelectedRef(nextRef);
               const response = await api.discover(project.id, {
                 ...discoveryBody(true), credential_ref: nextRef, selected_branches: selectedBranches,
@@ -461,11 +463,11 @@ export default function Discovery({
                 <Button
                   type="button"
                   busy={continueDiscovery.isPending}
-                  disabled={!!jobError || (mode === "guided" && (!guidedMap || branches.length === 0))}
+                  disabled={!!jobError || (mode === "guided" && (!guidedMap || (!switchingAccount && branches.length === 0)))}
                   onClick={() => continueDiscovery.mutate(undefined)}
                 >
                   <RefreshCw size={16} />
-                  {mode === "guided" ? "Explore selected paths" : "Continue Discovery"}
+                  {mode === "guided" ? (switchingAccount ? "Discover selected account" : "Explore selected paths") : "Continue Discovery"}
                 </Button>
               )}
               <Button
@@ -538,6 +540,7 @@ export default function Discovery({
           selectedRef={selectedRef}
           onSelectRef={(ref) => {
             setSelectedRef(ref);
+            setBranches([]);
             setSavedBadge(!!ref);
           }}
         />
