@@ -101,7 +101,7 @@ export default function Discovery({
     max_duration_seconds: duration,
     worker_limit: workerLimit,
     automatic_limits: false,
-    credential_ref: selectedRef ?? undefined,
+    credential_ref: selectedRef,
     discovery_mode: mode,
     selected_branches: resume && mode === "guided" ? branches : [],
     selected_auth_flow: null,
@@ -257,6 +257,7 @@ export default function Discovery({
         {map?.discovery_checkpoint?.input_requests && (
           <InputRequests
             mapId={map.id}
+            projectId={project.id}
             requests={map.discovery_checkpoint.input_requests}
             running={running}
             onSubmitted={() => {
@@ -266,6 +267,14 @@ export default function Discovery({
               void queryClient.invalidateQueries({ queryKey: ["workspace", project.id] });
             }}
             onResumed={onStarted}
+            onContinue={async (selectedBranches, credentialRef) => {
+              const nextRef = credentialRef ?? map.discovery_checkpoint?.configuration.credential_ref ?? null;
+              setSelectedRef(nextRef);
+              const response = await api.discover(project.id, {
+                ...discoveryBody(true), credential_ref: nextRef, selected_branches: selectedBranches,
+              });
+              onStarted(response.job_id);
+            }}
           />
         )}
 
@@ -321,7 +330,8 @@ export default function Discovery({
               <p>
                 {partial
                   ? "The graph already discovered is kept. Continue from where it stopped, or start from scratch."
-                  : "Check the application access settings and credentials before retrying."}
+                  : map?.diagnostic_evidence?.termination_detail ||
+                    "Check the application URL, browser access, and credentials before retrying."}
               </p>
               <details>
                 <summary>View details</summary>

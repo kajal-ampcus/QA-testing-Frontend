@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { api } from "../../api/client";
 import type { DiscoveryInputRequest } from "../../types/api";
 import { Button, ErrorState } from "../../components/ui";
@@ -54,39 +55,55 @@ function fieldControl(
 
 export function InputRequests({
   mapId,
+  projectId,
   requests,
   running,
   onSubmitted,
   onResumed,
+  onContinue,
 }: {
   mapId: string;
+  projectId: string;
   requests: DiscoveryInputRequest[];
   running: boolean;
   onSubmitted: () => void;
   onResumed: (jobId: string) => void;
+  onContinue: (branches: string[], credentialRef?: string | null) => Promise<void>;
 }) {
   const visible = requests.filter((request) => request.status === "pending");
   const [values, setValues] = useState<Record<string, Record<string, string>>>({});
   const [error, setError] = useState<unknown>(null);
   const [savingId, setSavingId] = useState<string | null>(null);
+  const [choices, setChoices] = useState<Record<string, string>>({});
+  const [saveAccount, setSaveAccount] = useState<Record<string, boolean>>({});
+  const [account, setAccount] = useState<Record<string, string>>({});
+  const accounts = useQuery({ queryKey: ["accounts", projectId], queryFn: () => api.accounts(projectId) });
 
   if (visible.length === 0) return null;
 
   const submit = async (request: DiscoveryInputRequest) => {
     const current = values[request.id] || {};
+    const target = request.submit?.name || "this form";
+    if (request.kind !== "login_choice" && !window.confirm(
+      request.kind === "login" ? `Sign in using ${request.login_label || "this login"} and continue discovery?` :
+      `Submit ${target} on the live website? This can send the entered data to the website owner.`,
+    )) return;
     setSavingId(request.id);
     setError(null);
     try {
       const response = await api.submitDiscoveryInput(
         mapId,
         request.id,
-        request.fields.map((field) => ({
+        account[request.id] ? [] : request.fields.filter((field) => current[field.key]).map((field) => ({
           key: field.key,
-          value: (current[field.key] || "").trim(),
+          value: current[field.key] || "",
         })),
+        { choice_id: choices[request.id], save_account: !!saveAccount[request.id], credential_ref: account[request.id] || undefined },
       );
+      setValues((previous) => ({ ...previous, [request.id]: {} }));
       onSubmitted();
       if (response.job_id) onResumed(response.job_id);
+      else if (response.selected_branches?.length) await onContinue(response.selected_branches, response.credential_ref);
     } catch (caught) {
       setError(caught);
     } finally {
@@ -98,11 +115,11 @@ export function InputRequests({
     <div className="input-requests">
       <h3>Values this application needs</h3>
       <p>
-        Discovery found these fields on the live page. They are not predefined
-        for this website.
+        Discovery found a live form that it can test. Enter test values below;
+        the form will not be submitted until you explicitly approve it.
         {running
           ? " Other pages keep being explored while you fill them in."
-          : " Save the values, then continue discovery so they can be applied."}
+          : " Approve the submission, then continue discovery so it can be tested."}
       </p>
       {visible.map((request) => (
         <form
@@ -120,7 +137,21 @@ export function InputRequests({
           </div>
           {request.status === "pending" ? (
             <>
-              {request.fields.map((field) => (
+              {request.kind === "login_choice" && (
+                <label className="field"><span>Which login do you want to discover?</span>
+                  <select required value={choices[request.id] || ""} onChange={(event) => setChoices({ ...choices, [request.id]: event.target.value })}>
+                    <option value="">Select a login</option>
+                    {request.choices?.map((choice) => <option key={choice.id} value={choice.id}>{choice.label}</option>)}
+                  </select>
+                </label>
+              )}
+              {request.kind === "login" && <label className="field"><span>Login group: {request.login_label || "Sign in"}</span>
+                <select value={account[request.id] || ""} onChange={(event) => setAccount({ ...account, [request.id]: event.target.value })}>
+                  <option value="">Enter credentials</option>
+                  {accounts.data?.filter((item) => item.login_group === request.login_group).map((item) => <option key={item.credential_ref} value={item.credential_ref}>{item.label}</option>)}
+                </select>
+              </label>}
+              {!account[request.id] && request.fields.map((field) => (
                 <label className="field" key={field.key}>
                   <span>
                     {field.name}
@@ -134,14 +165,18 @@ export function InputRequests({
                   )}
                 </label>
               ))}
+              {request.kind === "login" && !account[request.id] && <label>
+                <input type="checkbox" checked={!!saveAccount[request.id]} onChange={(event) => setSaveAccount({ ...saveAccount, [request.id]: event.target.checked })} /> Save this account in this login group for future tests
+                <span className="field-hint">Unchecked: credentials expire after 24 hours. One-time codes are never saved as reusable credentials.</span>
+              </label>}
               <div className="actions">
-                <Button type="submit" busy={savingId === request.id}>
-                  Save values
+                <Button type="submit" busy={savingId === request.id} disabled={running}>
+                  {request.kind === "login_choice" ? "Select and inspect login" : request.kind === "login" ? "Sign in and continue discovery" : "Review and approve submission"}
                 </Button>
               </div>
             </>
           ) : (
-            <p className="field-hint">Saved. Discovery will use these values on this page.</p>
+            <p className="field-hint">Approved. Discovery may submit this form once during testing.</p>
           )}
         </form>
       ))}

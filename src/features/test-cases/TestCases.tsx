@@ -60,15 +60,7 @@ function savedCoverageGaps(
     const categories = categoriesByAc.get(criterion.id);
     if (!categories) {
       uncovered.push(criterion.id);
-      targets[criterion.id] = ["POSITIVE", "NEGATIVE"];
-      continue;
-    }
-    const missing = ["POSITIVE", "NEGATIVE"].filter(
-      (category) => !categories.has(category),
-    );
-    if (missing.length) {
-      partial.push(criterion.id);
-      targets[criterion.id] = missing;
+      targets[criterion.id] = [];
     }
   }
   return { uncovered, partial, targets };
@@ -704,6 +696,7 @@ export default function TestCases({
           const sessionNotes =
             !!result &&
             (result.needs_review_test_cases.length > 0 ||
+              !!result.generation_gaps?.length ||
               !!result.duplicates_skipped);
           if (!missingCount && !sessionNotes) return null;
           return (
@@ -715,12 +708,11 @@ export default function TestCases({
                   test: {gaps.uncovered.join(", ")}
                 </p>
               )}
-              {gaps.partial.length > 0 && (
-                <p>
-                  {gaps.partial.length} criteria still need a positive or a
-                  negative case: {gaps.partial.join(", ")}
+              {result?.generation_gaps?.map((gap) => (
+                <p key={`${gap.ac_id}-${gap.status}`}>
+                  {gap.ac_id}: {human(gap.status)} — {gap.reason}
                 </p>
-              )}
+              ))}
               {!!result?.needs_review_test_cases.length && (
                 <p>
                   {result.needs_review_test_cases.length} generated case

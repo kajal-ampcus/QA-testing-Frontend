@@ -486,6 +486,7 @@ export function ApplicationAccess({
   // previous credential id, so a stale selection must move to the new one.
   useEffect(() => {
     if (!accounts.isSuccess) return;
+    if (selectedRef === null || selectedRef.startsWith("session-login:")) return;
     if (list.length === 0) {
       if (selectedRef !== null) onSelectRef(null);
       return;
@@ -572,7 +573,10 @@ export function ApplicationAccess({
                 marginBottom: "16px",
               }}
             >
+              <Button disabled={running} onClick={() => onSelectRef(null)}>Ask for login during discovery</Button>
               {list.map((account) => (
+                <div key={account.credential_ref}>
+                {account.login_group && <p className="field-hint">Login group: {account.role} · {account.login_route}</p>}
                 <AccountRow
                   key={account.credential_ref}
                   account={account}
@@ -584,6 +588,7 @@ export function ApplicationAccess({
                     onSelectRef(selectedRef === ref ? null : ref)
                   }
                 />
+                </div>
               ))}
             </div>
           )}

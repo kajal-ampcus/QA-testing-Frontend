@@ -13,6 +13,8 @@ export interface Project {
 
 /** A named test account attached to a project (backend CredentialCreateResponse shape). */
 export interface ProjectAccount {
+  login_group?: string | null;
+  login_route?: string | null;
   /** Stable key stored backend-side, e.g. "cred:<uuid>" */
   credential_ref: string;
   /** Human-readable label, e.g. "Admin", "Customer", "Manager" (maps to backend `label`) */
@@ -99,6 +101,7 @@ export interface DiscoveryCheckpoint {
   } | null;
   version: number;
   configuration: {
+    credential_ref?: string | null;
     mode:
       | "guided"
       | "entry_points"
@@ -166,6 +169,9 @@ export interface DiscoveryInputField {
 }
 
 export interface DiscoveryInputRequest {
+  choices?: { id: string; label: string }[];
+  login_group?: string;
+  login_label?: string;
   id: string;
   status: string;
   kind: string;
@@ -278,6 +284,11 @@ export interface Generation {
   partial_pairing_acs: string[];
   pairing_gaps?: { ac_id: string; missing: string[] }[];
   needs_review_test_cases: string[];
+  generation_gaps?: {
+    ac_id: string;
+    status: string;
+    reason: string;
+  }[];
   duplicates_skipped?: number;
 }
 

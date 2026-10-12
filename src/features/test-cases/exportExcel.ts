@@ -103,6 +103,10 @@ export function buildReportSheets({
     ["Uncovered acceptance criteria", result?.uncovered_acs.join(", ") || "None"],
     ["Partial scenario pairing", result?.partial_pairing_acs.join(", ") || "None"],
     ["Tests requiring review", result?.needs_review_test_cases.join(", ") || "None"],
+    [
+      "Generation gaps",
+      result?.generation_gaps?.map((gap) => `${gap.ac_id}: ${gap.status} — ${gap.reason}`).join(" | ") || "None",
+    ],
   ];
 
   const testRows = tests.map((test) => {

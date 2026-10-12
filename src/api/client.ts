@@ -236,10 +236,11 @@ export const api = {
     mapId: string,
     requestId: string,
     fields: { key: string; value: string }[],
+    options: { choice_id?: string; save_account?: boolean; credential_ref?: string } = {},
   ) =>
-    request<{ id: string; status: string; job_id?: string | null }>(
+    request<{ id: string; status: string; job_id?: string | null; selected_branches?: string[]; credential_ref?: string | null }>(
       `/application-maps/${mapId}/input-requests/${encodeURIComponent(requestId)}`,
-      { fields },
+      { fields, ...options, approve_submission: true },
     ),
 
   // ── Credentials (multi-account) ───────────────────────────
