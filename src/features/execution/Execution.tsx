@@ -18,6 +18,8 @@ import type {
   ExecutionRun,
 } from "../../types/api";
 import { flowNameForCase, groupByFlow, isRunnableReview } from "../automation/flows";
+import ExecutionInputs from "./ExecutionInputs";
+import ExecutionInputDraft from "./ExecutionInputDraft";
 
 const CHANNELS = [
   "screenshot",
@@ -643,6 +645,8 @@ export default function Execution({
           {job.error && <ErrorState error={job.error} />}
           {detail.error && <ErrorState error={detail.error} />}
         </Card>
+        {generationId && <ExecutionInputDraft key={generationId} projectId={projectId} generationId={generationId} />}
+        {liveRun && <ExecutionInputs projectId={projectId} runId={liveRun.id} />}
         {showLive && (
           <Card>
             <div className="card-heading">

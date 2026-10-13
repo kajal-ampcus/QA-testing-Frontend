@@ -509,6 +509,26 @@ export const api = {
       signal,
     ),
 
+  executionInputs: (projectId: string, runId: string, signal?: AbortSignal) =>
+    request<{ requests: Array<{
+      id: string; case_code: string; category: string; field: string;
+      objective: string; status: string; allow_empty: boolean; sensitive: boolean; reason?: string;
+    }> }>(`/executions/projects/${projectId}/runs/${runId}/input-requests`, undefined, signal),
+
+  executionInputDraft: (projectId: string, generationId: string, signal?: AbortSignal) =>
+    request<{
+      revision: number; supported: boolean;
+      bindings: Array<{ key: string; case_code: string; field: string; category: string; sensitive: boolean; allow_empty: boolean }>;
+      values: Record<string, { mode: string; value: string }>;
+    }>(`/executions/projects/${projectId}/generations/${generationId}/inputs`, undefined, signal),
+
+  saveExecutionInputDraft: (projectId: string, generationId: string, body: {
+    expected_revision: number; values: Record<string, { mode: string; value: string } | null>;
+  }) => request<{ revision: number }>(`/executions/projects/${projectId}/generations/${generationId}/inputs`, body),
+
+  answerExecutionInput: (projectId: string, runId: string, requestId: string, body: { mode: string; value: string }) =>
+    request<{ status: string }>(`/executions/projects/${projectId}/runs/${runId}/input-requests/${requestId}`, body),
+
   stopExecution: (projectId: string) =>
     request<{ job_id: string; status: string }>(
       `/executions/projects/${projectId}`,

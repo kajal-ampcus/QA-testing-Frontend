@@ -34,13 +34,13 @@ import { flowNameForCase, groupByFlow } from "./flows";
 const WRITABLE_LANGUAGE = "typescript";
 const WRITABLE_FRAMEWORK = "playwright";
 
-
 function LoginAccount({ projectId }: { projectId: string }) {
   const accounts = useQuery({
     queryKey: ["workspace", projectId, "accounts"],
     queryFn: ({ signal }) => api.accounts(projectId, signal),
   });
-  const account = accounts.data?.find((item) => item.is_default) ?? accounts.data?.[0];
+  const account =
+    accounts.data?.find((item) => item.is_default) ?? accounts.data?.[0];
   const [open, setOpen] = useState(false);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -83,7 +83,11 @@ function LoginAccount({ projectId }: { projectId: string }) {
         <>
           <label className="field">
             <span>Username</span>
-            <input value={username} onChange={(event) => setUsername(event.target.value)} autoComplete="off" />
+            <input
+              value={username}
+              onChange={(event) => setUsername(event.target.value)}
+              autoComplete="off"
+            />
           </label>
           <label className="field">
             <span>Password</span>
@@ -181,7 +185,6 @@ function caseCount(count: number): string {
   return `${count} case${count === 1 ? "" : "s"}`;
 }
 
-
 export default function Automation({
   projectId,
   tests,
@@ -213,12 +216,18 @@ export default function Automation({
   const [openedId, setOpenedId] = useState<string | null>(null);
   const [language, setLanguage] = useState(WRITABLE_LANGUAGE);
   const [framework, setFramework] = useState(WRITABLE_FRAMEWORK);
-  const canWrite = language === WRITABLE_LANGUAGE && framework === WRITABLE_FRAMEWORK;
+  const canWrite =
+    language === WRITABLE_LANGUAGE && framework === WRITABLE_FRAMEWORK;
 
   const generate = useAction(
     projectId,
     (body: { ids: string[]; language: string; framework: string }) =>
-      api.generateAutomation(projectId, body.ids, body.language, body.framework),
+      api.generateAutomation(
+        projectId,
+        body.ids,
+        body.language,
+        body.framework,
+      ),
     (data) => {
       setOpenedId(data.generation_id);
     },
@@ -258,24 +267,46 @@ export default function Automation({
         ? generate.data
         : opened.data;
 
-  const preview = result?.sources.find(
-    (item) => item.path === file,
-  )?.content;
+  const preview = result?.sources.find((item) => item.path === file)?.content;
 
-  const inSuiteIds = useMemo(
-    () => (result?.scripts ?? []).map((script) => script.test_case_id).sort().join(","),
-    [result],
+  const inSuiteIds = useMemo(() => {
+    const source = result?.sources.find(
+      (item) => item.path === "manifest.json",
+    )?.content;
+    if (!source) return "";
+    try {
+      const manifest = JSON.parse(source) as {
+        cases?: Array<{ test_case_id: string; input_runtime_version?: number }>;
+      };
+      const upgraded = new Set(
+        (manifest.cases ?? [])
+          .filter((item) => item.input_runtime_version === 1)
+          .map((item) => item.test_case_id),
+      );
+      return (result?.scripts ?? [])
+        .filter((script) => upgraded.has(script.test_case_id))
+        .map((script) => script.test_case_id)
+        .sort()
+        .join(",");
+    } catch {
+      return "";
+    }
+  }, [result]);
+  const inSuite = useMemo(
+    () => new Set(inSuiteIds ? inSuiteIds.split(",") : []),
+    [inSuiteIds],
   );
-  const inSuite = useMemo(() => new Set(inSuiteIds ? inSuiteIds.split(",") : []), [inSuiteIds]);
   useEffect(() => {
     setSelected((current) => current.filter((id) => !inSuite.has(id)));
   }, [inSuite]);
   const flowGroups = useMemo(
     () =>
-      groupByFlow(eligible, ({ test }) => flowNameForCase(test, map)).map((group) => ({
-        ...group,
-        fresh: group.items.filter(({ test }) => !inSuite.has(test.id)),
-      })),
+      groupByFlow(eligible, ({ test }) => flowNameForCase(test, map)).map(
+        (group) => ({
+          ...group,
+          fresh: group.items.filter(({ test }) => !inSuite.has(test.id)),
+        }),
+      ),
     [eligible, map, inSuite],
   );
   const toWrite = selected.filter((id) => !inSuite.has(id));
@@ -315,6 +346,13 @@ export default function Automation({
                 cases and leaves the existing Playwright files in place. Cases
                 for the same page stay in one flow, such as Login or Dashboard.
               </p>
+              {!!result?.scripts.length &&
+                inSuite.size < result.scripts.length && (
+                  <p>
+                    Select the existing cases below and generate them once to
+                    enable execution input checkpoints.
+                  </p>
+                )}
             </div>
           </div>
           <LoginAccount projectId={projectId} />
@@ -329,7 +367,8 @@ export default function Automation({
               {flowGroups.map((group) => {
                 const freshIds = group.fresh.map(({ test }) => test.id);
                 const checked =
-                  freshIds.length > 0 && freshIds.every((id) => selected.includes(id));
+                  freshIds.length > 0 &&
+                  freshIds.every((id) => selected.includes(id));
                 const partial = freshIds.some((id) => selected.includes(id));
                 const inSuiteCount = group.items.length - group.fresh.length;
                 return (
@@ -363,7 +402,9 @@ export default function Automation({
                                   {test.tc_code} · {test.current.title}
                                 </strong>
                                 <small>
-                                  {written ? "In suite" : `Version ${test.current_version}`}
+                                  {written
+                                    ? "In suite"
+                                    : `Version ${test.current_version}`}
                                 </small>
                               </span>
                             </label>
@@ -491,10 +532,9 @@ export default function Automation({
           </h3>
 
           <p>
-            After the suite is written, the execution agent runs
-            npx playwright test on the server. You do not need to run that
-            command yourself. Destructive flows stay skipped until
-            RUN_DESTRUCTIVE is true.
+            After the suite is written, the execution agent runs npx playwright
+            test on the server. You do not need to run that command yourself.
+            Destructive flows stay skipped until RUN_DESTRUCTIVE is true.
           </p>
         </Card>
 
@@ -533,7 +573,6 @@ export default function Automation({
   );
 }
 
-
 /**
  * Actions available for an already generated automation suite.
  *
@@ -564,12 +603,12 @@ function SuiteActions({
             setDownloading(true);
 
             void beforeAccess()
-              .then(() => api.downloadAutomation(projectId, result.generation_id))
+              .then(() =>
+                api.downloadAutomation(projectId, result.generation_id),
+              )
               .catch((error: unknown) => {
                 setDownloadError(
-                  error instanceof Error
-                    ? error.message
-                    : "Download failed.",
+                  error instanceof Error ? error.message : "Download failed.",
                 );
               })
               .finally(() => setDownloading(false));
@@ -587,8 +626,14 @@ function SuiteActions({
               event.preventDefault();
               setDownloadError("");
               void beforeAccess()
-                .then(() => { window.location.href = result.vscode_url!; })
-                .catch((error: unknown) => setDownloadError(error instanceof Error ? error.message : "Save failed."));
+                .then(() => {
+                  window.location.href = result.vscode_url!;
+                })
+                .catch((error: unknown) =>
+                  setDownloadError(
+                    error instanceof Error ? error.message : "Save failed.",
+                  ),
+                );
             }}
           >
             Open in VS Code
@@ -596,13 +641,10 @@ function SuiteActions({
         )}
       </div>
 
-      {downloadError && (
-        <ErrorState error={new Error(downloadError)} />
-      )}
+      {downloadError && <ErrorState error={new Error(downloadError)} />}
     </>
   );
 }
-
 
 type SuiteFile = { name: string; path: string };
 type SuiteFolder = {
@@ -667,7 +709,10 @@ function FolderRows({
               onClick={() => toggle(child.path)}
               style={{ paddingLeft: 8 + depth * 14 }}
             >
-              <ChevronRight size={13} className={open ? "chevron open" : "chevron"} />
+              <ChevronRight
+                size={13}
+                className={open ? "chevron open" : "chevron"}
+              />
               {open ? <FolderOpen size={14} /> : <Folder size={14} />}
               <span>{child.name}</span>
             </button>
@@ -761,13 +806,20 @@ function Result({
   preview?: string;
   onFile: (path: string) => void;
 }) {
-  const [editedSources, setEditedSources] = useState<Record<string, string>>({});
-  const pendingSources = useRef<Record<string, { path: string; content: string }>>({});
+  const [editedSources, setEditedSources] = useState<Record<string, string>>(
+    {},
+  );
+  const pendingSources = useRef<
+    Record<string, { path: string; content: string }>
+  >({});
   const saveQueue = useRef<Promise<void>>(Promise.resolve());
   const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => () => {
-    if (autoSaveTimer.current !== null) clearTimeout(autoSaveTimer.current);
-  }, []);
+  useEffect(
+    () => () => {
+      if (autoSaveTimer.current !== null) clearTimeout(autoSaveTimer.current);
+    },
+    [],
+  );
   const [saveError, setSaveError] = useState<Error | null>(null);
   const [saveStatus, setSaveStatus] = useState("");
   const sourceKey = `${projectId}:${result.generation_id}:${file}`;
@@ -787,25 +839,37 @@ function Result({
       clearTimeout(autoSaveTimer.current);
       autoSaveTimer.current = null;
     }
-    const operation = saveQueue.current.catch(() => {}).then(async () => {
-      const files = Object.values(pendingSources.current);
-      if (!files.length) return;
-      setSaveStatus("Saving...");
-      setSaveError(null);
-      try {
-        await api.saveAutomationSources(projectId, result.generation_id, files);
-        for (const saved of files) {
-          if (pendingSources.current[saved.path]?.content === saved.content) {
-            delete pendingSources.current[saved.path];
+    const operation = saveQueue.current
+      .catch(() => {})
+      .then(async () => {
+        const files = Object.values(pendingSources.current);
+        if (!files.length) return;
+        setSaveStatus("Saving...");
+        setSaveError(null);
+        try {
+          await api.saveAutomationSources(
+            projectId,
+            result.generation_id,
+            files,
+          );
+          for (const saved of files) {
+            if (pendingSources.current[saved.path]?.content === saved.content) {
+              delete pendingSources.current[saved.path];
+            }
           }
+          setSaveStatus(
+            Object.keys(pendingSources.current).length
+              ? "Unsaved changes"
+              : "Changes saved",
+          );
+        } catch (error) {
+          setSaveStatus("Changes could not be saved");
+          setSaveError(
+            error instanceof Error ? error : new Error("Save failed."),
+          );
+          throw error;
         }
-        setSaveStatus(Object.keys(pendingSources.current).length ? "Unsaved changes" : "Changes saved");
-      } catch (error) {
-        setSaveStatus("Changes could not be saved");
-        setSaveError(error instanceof Error ? error : new Error("Save failed."));
-        throw error;
-      }
-    });
+      });
     saveQueue.current = operation;
     return operation;
   };
@@ -815,7 +879,11 @@ function Result({
       <div className="automation-result-head">
         <p className="automation-banner">{result.label}</p>
 
-        <SuiteActions projectId={projectId} result={result} beforeAccess={saveSources} />
+        <SuiteActions
+          projectId={projectId}
+          result={result}
+          beforeAccess={saveSources}
+        />
       </div>
 
       <div className="automation-status">
@@ -823,13 +891,11 @@ function Result({
         <StatusBadge status={result.risk_level} />
         <StatusBadge status={result.verification.status} />
         <span className="muted">
-          {(result.language ?? "typescript")} · {(result.framework ?? "playwright")}
+          {result.language ?? "typescript"} · {result.framework ?? "playwright"}
         </span>
 
         {result.approval_required && (
-          <span className="muted">
-            Tester approval required
-          </span>
+          <span className="muted">Tester approval required</span>
         )}
       </div>
 
@@ -892,11 +958,8 @@ function Result({
 
       <p className="muted">
         Verification: {result.verification.status}. Type check{" "}
-        {result.verification.tsc}. List{" "}
-        {result.verification.playwright_list}.
-        {result.verification.detail
-          ? ` ${result.verification.detail}`
-          : ""}
+        {result.verification.tsc}. List {result.verification.playwright_list}.
+        {result.verification.detail ? ` ${result.verification.detail}` : ""}
       </p>
 
       <div className="automation-files">
@@ -911,7 +974,9 @@ function Result({
         <textarea
           key={sourceKey}
           className="source-preview automation-source-editor"
-          aria-label={file ? `Edit source code for ${file}` : "Source code editor"}
+          aria-label={
+            file ? `Edit source code for ${file}` : "Source code editor"
+          }
           value={source}
           placeholder="Select a file to edit its source."
           disabled={preview === undefined}
@@ -920,7 +985,9 @@ function Result({
           autoCorrect="off"
           wrap="off"
           onChange={(event) => updateSource(event.target.value)}
-          onBlur={() => { void saveSources().catch(() => {}); }}
+          onBlur={() => {
+            void saveSources().catch(() => {});
+          }}
           onKeyDown={(event) => {
             if (event.key !== "Tab" || event.shiftKey) return;
             event.preventDefault();
@@ -935,7 +1002,11 @@ function Result({
         />
       </div>
 
-      {saveStatus && <p className="muted" role="status">{saveStatus}</p>}
+      {saveStatus && (
+        <p className="muted" role="status">
+          {saveStatus}
+        </p>
+      )}
       {saveError && <ErrorState error={saveError} />}
 
       <p className="muted">
