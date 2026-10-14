@@ -279,6 +279,10 @@ export interface TestCase {
 
 export interface Generation {
   generated: number;
+  outcome?: "generated" | "validation_rejected" | "no_supported_cases";
+  message?: string;
+  ac_evidence?: { ac_id: string; status: string; reason: string }[];
+  validation_issues?: string[];
   test_cases: TestCase[];
   uncovered_acs: string[];
   partial_pairing_acs: string[];

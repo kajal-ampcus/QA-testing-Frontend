@@ -368,6 +368,7 @@ export const api = {
     selected_area_ids: string[] = [],
     selected_module_ids: string[] = [],
     selected_branch_keys: string[] = [],
+    regenerate = false,
   ) =>
     request<Generation>(`/test-cases/projects/${id}/generate`, {
       requirement_id,
@@ -377,6 +378,7 @@ export const api = {
       selected_area_ids,
       selected_module_ids,
       ...(selected_branch_keys.length ? { selected_branch_keys } : {}),
+      ...(regenerate ? { regenerate: true } : {}),
     }),
 
   createTest: (

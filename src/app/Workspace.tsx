@@ -178,6 +178,7 @@ export default function Workspace({ id }: { id: string }) {
       areaIds: string[];
       moduleIds: string[];
       branchKeys?: string[];
+      regenerate?: boolean;
     }) =>
       api.generate(
         id,
@@ -188,6 +189,7 @@ export default function Workspace({ id }: { id: string }) {
         selection.areaIds,
         selection.moduleIds,
         selection.branchKeys,
+        selection.regenerate,
       ),
     () => navigateStage(5),
   );
@@ -466,6 +468,11 @@ export default function Workspace({ id }: { id: string }) {
                   coverageError={coverageGeneration.error}
                   onCompleteCoverage={(targets) =>
                     coverageGeneration.mutate(targets)
+                  }
+                  generatingWholeGraph={generation.isPending}
+                  wholeGraphError={generation.error}
+                  onGenerateWholeGraph={(regenerate) =>
+                    generation.mutate({ scope: "all", areaIds: [], moduleIds: [], regenerate })
                   }
                   approvals={approvals.data || []}
                   requirement={r}

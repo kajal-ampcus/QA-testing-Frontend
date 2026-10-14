@@ -3528,6 +3528,35 @@ select,
   color: #7d8b76;
   font-size: 12px;
 }
+.test-flow-row td {
+  padding: 0.7rem 1rem;
+  background: var(--surface-muted, #f4f7f3);
+  border-top: 1px solid var(--border, #dbe4da);
+  border-bottom: 1px solid var(--border, #dbe4da);
+}
+
+.test-flow-row strong {
+  color: var(--text, #173120);
+}
+
+.test-flow-select {
+  display: inline-flex;
+  margin-right: 0.55rem;
+  vertical-align: middle;
+}
+
+.test-flow-select input {
+  width: 1rem;
+  height: 1rem;
+  cursor: pointer;
+}
+
+.test-flow-row span {
+  margin-left: 0.55rem;
+  color: var(--muted, #66756a);
+  font-size: 0.82rem;
+}
+
 .automation-cases li.flow-group {
   display: block;
   padding: 10px 0 4px;

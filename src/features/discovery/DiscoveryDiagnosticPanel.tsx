@@ -102,11 +102,15 @@ export function DiscoveryDiagnosticPanel({
   status,
   mapId,
   awaitingSelection = false,
+  waitingForInput = false,
+  waitingForLoginChoice = false,
 }: {
   diagnostic: DiscoveryDiagnostic;
   status: string;
   mapId: string;
   awaitingSelection?: boolean;
+  waitingForInput?: boolean;
+  waitingForLoginChoice?: boolean;
 }) {
   const isFailed = status === "FAILED";
   const consoleErrors = diagnostic.console_errors ?? [];
@@ -121,6 +125,16 @@ export function DiscoveryDiagnosticPanel({
     consoleErrors.length +
     networkErrors.length +
     failedActions.length;
+
+  if (waitingForInput && totalIssues === 0 && !isFailed) {
+    return <div className="notice" role="status">
+      <strong>{waitingForLoginChoice ? "Choose a login to continue discovery" : "Discovery is waiting for your input"}</strong>
+      <p>{waitingForLoginChoice
+        ? "Select Employee, Admin, or another available login in the input section above, then select and inspect that login. Authentication has not started."
+        : "Complete the requested fields in the input section above and approve the submission to continue."} Your discovered pages are saved.</p>
+      <a href="#discovery-inputs">Go to requested input</a>
+    </div>;
+  }
 
   if (awaitingSelection && totalIssues === 0 && !isFailed) {
     return <div className="notice" role="status"><strong>Selected pages discovered successfully</strong>

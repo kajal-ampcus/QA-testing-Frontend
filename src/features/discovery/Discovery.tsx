@@ -59,7 +59,9 @@ export default function Discovery({
   const [branches, setBranches] = useState<string[]>([]);
   const [submittedMode, setSubmittedMode] = useState<"guided" | "complete" | null>(null);
   const guidedMap = map?.discovery_checkpoint?.configuration.mode === "guided";
-  const savedBranches = map?.discovery_checkpoint?.jobs?.filter((item) => item.path.length > 0) ?? [];
+  const [restartingMapId, setRestartingMapId] = useState<string | null>(null);
+  const awaitingFreshMap = restartingMapId !== null && map?.id === restartingMapId;
+  const savedBranches = awaitingFreshMap ? [] : map?.discovery_checkpoint?.jobs?.filter((item) => item.path.length > 0) ?? [];
   const [pages, setPages] = useState(
     map?.discovery_checkpoint?.configuration.max_pages ?? 150,
   );
@@ -116,13 +118,22 @@ export default function Discovery({
 
   const discover = useAction(
     project.id,
-    () => api.discover(
+    async () => {
+      setRestartingMapId(map?.id ?? null);
+      setBranches([]);
+      try {
+        return await api.discover(
       project.id,
       discoveryBody(
         false,
         !!map && (mode === "guided" || (map.status === "PARTIAL" && !!map.discovery_checkpoint)),
       ),
-    ),
+        );
+      } catch (error) {
+        setRestartingMapId(null);
+        throw error;
+      }
+    },
     (data) => { setSubmittedMode(mode); setBranches([]); onStarted(data.job_id); },
   );
   const continueDiscovery = useAction(
@@ -256,7 +267,8 @@ export default function Discovery({
           </>
         ) : null}
 
-        {map?.discovery_checkpoint?.input_requests && (
+        {awaitingFreshMap && <div className="notice" role="status">Starting a fresh discovery map. Previous path completion belongs to the earlier map and is not reused.</div>}
+        {!awaitingFreshMap && map?.discovery_checkpoint?.input_requests && (
           <InputRequests
             mapId={map.id}
             projectId={project.id}
@@ -463,7 +475,7 @@ export default function Discovery({
                 <Button
                   type="button"
                   busy={continueDiscovery.isPending}
-                  disabled={!!jobError || (mode === "guided" && (!guidedMap || (!switchingAccount && branches.length === 0)))}
+                  disabled={awaitingFreshMap || !!jobError || (mode === "guided" && (!guidedMap || (!switchingAccount && branches.length === 0)))}
                   onClick={() => continueDiscovery.mutate(undefined)}
                 >
                   <RefreshCw size={16} />
@@ -498,6 +510,8 @@ export default function Discovery({
         {/* Next action */}
         {map && !running && (map.diagnostic_evidence || loginFailureNotice(map)) && (
           <DiscoveryDiagnosticPanel
+            waitingForInput={map.termination_reason === "WAITING_FOR_INPUT"}
+            waitingForLoginChoice={map.discovery_checkpoint?.input_requests?.some((request) => request.kind === "login_choice" && request.status === "pending")}
             diagnostic={
               map.diagnostic_evidence ?? {
                 auth_attempted: true,

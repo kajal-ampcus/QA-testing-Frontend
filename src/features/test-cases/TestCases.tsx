@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useMemo, useRef, useState } from "react";
+import * as XLSX from "xlsx";
 import {
   Sparkles,
   ArrowRight,
@@ -32,6 +33,7 @@ import {
 import { human } from "../../utils/workflow";
 import { exportCompleteExcelReport } from "./exportExcel";
 import ReviewEditor from "./ReviewEditor";
+import { flowNameForCase, groupByFlow } from "../automation/flows";
 
 function savedCoverageGaps(
   requirement: Requirement | undefined,
@@ -507,11 +509,16 @@ export function Generate({
           </div>
         )}
         {result && (
-          <div className="notice success">
+          <div className={result.generated > 0 ? "notice success" : "notice"}>
             <strong>{result.generated} test cases generated</strong>
             <p>
-              Review scenarios, confidence, and traceability before using them.
+              {result.message || "Review scenarios, confidence, and traceability before using them."}
             </p>
+            {!!result.ac_evidence?.length && <details>
+              <summary>Acceptance criteria: {result.ac_evidence.filter((item) => item.status === "partial").length} with scenarios, {result.ac_evidence.filter((item) => item.status === "deferred").length} deferred</summary>
+              {result.ac_evidence.map((item) => <p key={item.ac_id}>{item.ac_id}: {item.status} — {item.reason}</p>)}
+            </details>}
+            {result.validation_issues?.map((issue, index) => <p key={index}>{issue}</p>)}
             <Button onClick={onReview}>
               Review test cases <ArrowRight size={16} />
             </Button>
@@ -545,6 +552,9 @@ export default function TestCases({
   completingCoverage,
   coverageError,
   onCompleteCoverage,
+  generatingWholeGraph,
+  wholeGraphError,
+  onGenerateWholeGraph,
   approvals = [],
   requirement,
   onNext,
@@ -557,6 +567,9 @@ export default function TestCases({
   completingCoverage?: boolean;
   coverageError?: unknown;
   onCompleteCoverage?: (targets: Record<string, string[]>) => void;
+  generatingWholeGraph?: boolean;
+  wholeGraphError?: unknown;
+  onGenerateWholeGraph?: (regenerate: boolean) => void;
   approvals?: Approval[];
   requirement?: Requirement;
   onNext?: () => void;
@@ -573,17 +586,47 @@ export default function TestCases({
   const [editingId, setEditingId] = useState<string>();
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkReviewer, setBulkReviewer] = useState("");
-  const reviewable = tests.filter((test) =>
+  const importInput = useRef<HTMLInputElement>(null);
+  const [importMessage, setImportMessage] = useState("");
+  // Regeneration retains previous approved cases as audit history but removes
+  // them from the active review set. The newly generated cases are DRAFT.
+  const activeTests = tests.filter((test) => test.status !== "OUTDATED");
+  const reviewable = activeTests.filter((test) =>
     ["DRAFT", "PENDING_APPROVAL", "REJECTED"].includes(test.status),
   );
-  useEffect(() => {
-    setSelectedIds(new Set(reviewable.map((test) => test.id)));
-  }, [tests]);
   const remove = useAction(
     projectId,
     (testCase: TestCase) => api.deleteTest(testCase.id),
     () => setSelected(undefined),
   );
+  const importExcel = useAction(projectId, async (file: File) => {
+    if (!map || !requirement?.acceptance_criteria.length) {
+      throw new Error("Select a requirement with acceptance criteria and complete discovery first.");
+    }
+    const workbook = XLSX.read(await file.arrayBuffer(), { type: "array" });
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "" });
+    if (!rows.length) throw new Error("The selected workbook has no test-case rows.");
+    const acId = requirement.acceptance_criteria[0].id;
+    const startState = map.states[0]?.state_code;
+    let imported = 0;
+    for (const row of rows) {
+      const scenario = String(row["Test Scenario"] || row["Title"] || "").trim();
+      const expected = String(row["Expected Result"] || "").trim();
+      if (!scenario || !expected) continue;
+      const type = String(row["Type"] || "").toUpperCase();
+      const category = type.includes("NEGATIVE") ? "NEGATIVE" : type.includes("EDGE") ? "EDGE_CASE" : "POSITIVE";
+      await api.createTest(projectId, {
+        requirement_id: requirement.id, application_map_id: map.id, title: scenario,
+        objective: String(row["Module"] || scenario), expected_result: expected, category,
+        traceability: [acId], preconditions: String(row["Preconditions"] || "").split(/\r?\n|;/).filter(Boolean),
+        step_notes: String(row["Test Steps"] || "").split(/\r?\n|;/).filter(Boolean), start_state_code: startState,
+      });
+      imported += 1;
+    }
+    if (!imported) throw new Error("No rows contained both Test Scenario and Expected Result.");
+    return imported;
+  }, (count) => setImportMessage(`${count} Excel test case${count === 1 ? "" : "s"} imported as drafts.`));
   const bulkReview = useAction(
     projectId,
     () =>
@@ -598,7 +641,7 @@ export default function TestCases({
       setSelected(undefined);
     },
   );
-  const filtered = tests.filter(
+  const filtered = activeTests.filter(
     (t) =>
       `${t.tc_code} ${t.current.title} ${t.current.traceability.join(" ")}`
         .toLowerCase()
@@ -614,6 +657,13 @@ export default function TestCases({
             : t.current.confidence < 0.7)),
   );
   const req = requirements.find((r) => r.id === selected?.requirement_id);
+  const flowGroups = useMemo(
+    () => groupByFlow(filtered, (test) => flowNameForCase(test, map)),
+    [filtered, map],
+  );
+  const hasApprovedForCurrentMap = activeTests.some(
+    (test) => test.status === "APPROVED" && test.application_map_id === map?.id,
+  );
   const exportTests = () => {
     const url = URL.createObjectURL(
       new Blob([JSON.stringify(filtered, null, 2)], {
@@ -648,7 +698,7 @@ export default function TestCases({
           </div>
           <div>
             <h2>
-              Test cases <span className="count">{tests.length}</span>
+              Test cases <span className="count">{activeTests.length}</span>
             </h2>
             <p>Traceable scenarios. Clear intent. Ready for your review.</p>
           </div>
@@ -663,6 +713,12 @@ export default function TestCases({
               <Plus size={15} />
                 Add Custom Case
             </Button>
+            <input ref={importInput} type="file" accept=".xlsx,.xls" className="sr-only"
+              onChange={(event) => { const file = event.target.files?.[0]; if (file) importExcel.mutate(file); event.currentTarget.value = ""; }} />
+            <Button variant="secondary" onClick={() => importInput.current?.click()} busy={importExcel.isPending}
+              disabled={!map || !requirement?.acceptance_criteria.length}>
+              <Plus size={15} /> Import Excel
+            </Button>
             <Button
               variant="secondary"
               onClick={exportTests}
@@ -674,7 +730,7 @@ export default function TestCases({
             <Button
               variant="secondary"
               onClick={exportExcel}
-              disabled={!tests.length}
+              disabled={!activeTests.length}
               busy={exportingExcel}
             >
               <Download size={15} />
@@ -686,12 +742,25 @@ export default function TestCases({
                 <ArrowRight size={15} />
               </Button>
             )}
+            {onGenerateWholeGraph && map && (
+              <Button
+                variant="secondary"
+                onClick={() => onGenerateWholeGraph(hasApprovedForCurrentMap)}
+                busy={generatingWholeGraph}
+              >
+                <Sparkles size={15} />
+                {hasApprovedForCurrentMap ? "Regenerate test cases" : "Generate for whole graph"}
+              </Button>
+            )}
           </div>
         </div>
         {exportError && <p className="notice error">{exportError}</p>}
+        {importExcel.error && <ErrorState error={importExcel.error} />}
+        {importMessage && <p className="notice success">{importMessage}</p>}
+        {!!wholeGraphError && <ErrorState error={wholeGraphError} />}
         {!!coverageError && <ErrorState error={coverageError} />}
         {(() => {
-          const gaps = savedCoverageGaps(requirement, tests);
+          const gaps = savedCoverageGaps(requirement, activeTests);
           const missingCount = gaps.uncovered.length + gaps.partial.length;
           const sessionNotes =
             !!result &&
@@ -836,12 +905,12 @@ export default function TestCases({
         {!filtered.length ? (
           <EmptyState
             title={
-              tests.length
+              activeTests.length
                 ? "No tests match these filters"
                 : "Your test cases will appear here"
             }
             description={
-              tests.length
+              activeTests.length
                 ? "Adjust your search or filters to see more scenarios."
                 : "Generate tests, or add a custom edge case from this page."
             }
@@ -867,41 +936,76 @@ export default function TestCases({
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((t) => {
-                  const r = requirements.find((r) => r.id === t.requirement_id);
-                  const stale =
-                    r?.version !== t.requirement_version ||
-                    map?.id !== t.application_map_id;
-                  const canReview = [
-                    "DRAFT",
-                    "PENDING_APPROVAL",
-                    "REJECTED",
-                  ].includes(t.status);
-                  return (
-                    <ReviewableRows
-                      key={t.id}
-                      test={t}
-                      requirementLabel={r?.req_code || "Requirement"}
-                      stale={stale}
-                      canReview={canReview}
-                      showSelect={reviewable.length > 0}
-                      selected={selectedIds.has(t.id)}
-                      editing={editingId === t.id}
-                      onToggle={(checked) => {
-                        setSelectedIds((current) => {
-                          const next = new Set(current);
-                          if (checked) next.add(t.id);
-                          else next.delete(t.id);
-                          return next;
-                        });
-                      }}
-                      onOpen={() => setSelected(t)}
-                      onEdit={() => setEditingId(t.id)}
-                      onCancelEdit={() => setEditingId(undefined)}
-                      onSaved={() => setEditingId(undefined)}
-                      projectId={projectId}
-                    />
-                  );
+                {flowGroups.flatMap((group) => {
+                  const groupReviewableIds = group.items
+                    .filter((test) => ["DRAFT", "PENDING_APPROVAL", "REJECTED"].includes(test.status))
+                    .map((test) => test.id);
+                  const groupSelected = groupReviewableIds.length > 0 &&
+                    groupReviewableIds.every((id) => selectedIds.has(id));
+                  return [
+                  <tr className="test-flow-row" key={`flow-${group.flow}`}>
+                    <td colSpan={reviewable.length > 0 ? 7 : 6}>
+                      {groupReviewableIds.length > 0 && (
+                        <label className="test-flow-select">
+                          <input
+                            type="checkbox"
+                            aria-label={`Select all ${group.flow} test cases`}
+                            checked={groupSelected}
+                            onChange={(event) => {
+                              setSelectedIds((current) => {
+                                const next = new Set(current);
+                                for (const id of groupReviewableIds) {
+                                  if (event.target.checked) next.add(id);
+                                  else next.delete(id);
+                                }
+                                return next;
+                              });
+                            }}
+                          />
+                          <span className="sr-only">Select all {group.flow} test cases</span>
+                        </label>
+                      )}
+                      <strong>{group.flow}</strong>
+                      <span>{group.items.length} case{group.items.length === 1 ? "" : "s"}</span>
+                    </td>
+                  </tr>,
+                  ...group.items.map((t) => {
+                    const r = requirements.find((r) => r.id === t.requirement_id);
+                    const stale =
+                      r?.version !== t.requirement_version ||
+                      map?.id !== t.application_map_id;
+                    const canReview = [
+                      "DRAFT",
+                      "PENDING_APPROVAL",
+                      "REJECTED",
+                    ].includes(t.status);
+                    return (
+                      <ReviewableRows
+                        key={t.id}
+                        test={t}
+                        requirementLabel={r?.req_code || "Requirement"}
+                        stale={stale}
+                        canReview={canReview}
+                        showSelect={reviewable.length > 0}
+                        selected={selectedIds.has(t.id)}
+                        editing={editingId === t.id}
+                        onToggle={(checked) => {
+                          setSelectedIds((current) => {
+                            const next = new Set(current);
+                            if (checked) next.add(t.id);
+                            else next.delete(t.id);
+                            return next;
+                          });
+                        }}
+                        onOpen={() => setSelected(t)}
+                        onEdit={() => setEditingId(t.id)}
+                        onCancelEdit={() => setEditingId(undefined)}
+                        onSaved={() => setEditingId(undefined)}
+                        projectId={projectId}
+                      />
+                    );
+                  }),
+                ];
                 })}
               </tbody>
             </table>

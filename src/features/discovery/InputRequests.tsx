@@ -112,7 +112,7 @@ export function InputRequests({
   };
 
   return (
-    <div className="input-requests">
+    <div className="input-requests" id="discovery-inputs">
       <h3>Values this application needs</h3>
       <p>
         Discovery found a live form that it can test. Enter test values below;
