@@ -85,6 +85,10 @@ export interface AppMap {
 }
 
 export interface DiscoveryCheckpoint {
+  account_contexts?: Record<string, {
+    jobs?: DiscoveryCheckpoint["jobs"];
+    input_requests?: DiscoveryInputRequest[];
+  }>;
   jobs?: Array<{
     key: string;
     status: string;

@@ -25,7 +25,7 @@ import LiveDiscoveryGraph from "./LiveDiscoveryGraph";
 import type { ApplicationGraphData } from "../application-map/graphLayout";
 import { DiscoveryDiagnosticPanel } from "./DiscoveryDiagnosticPanel";
 import { loginFailureNotice } from "../application-map/ApplicationMap";
-import { DiscoveryPaths } from "./DiscoveryPaths";
+import { DiscoveryPaths, SavedAccountPaths } from "./DiscoveryPaths";
 import { SavedInputs } from "./SavedInputs";
 
 export default function Discovery({
@@ -140,7 +140,14 @@ export default function Discovery({
     project.id,
     (selected: string[] | undefined) => api.discover(project.id, {
       ...discoveryBody(true),
-      selected_branches: selected ?? branches,
+      selected_branches: selected ?? (switchingAccount ? [] : branches),
+    }),
+    (data) => { setSubmittedMode(mode); setBranches([]); onStarted(data.job_id); },
+  );
+  const continueAccount = useAction(
+    project.id,
+    ({ ref, keys }: { ref: string | null; keys: string[] }) => api.discover(project.id, {
+      ...discoveryBody(true), credential_ref: ref, selected_branches: keys,
     }),
     (data) => { setSubmittedMode(mode); setBranches([]); onStarted(data.job_id); },
   );
@@ -158,7 +165,7 @@ export default function Discovery({
     (activeJob(job?.status) ||
       (!terminalJob && map?.status === "RUNNING") ||
       discover.isPending ||
-      continueDiscovery.isPending);
+      continueDiscovery.isPending || continueAccount.isPending);
 
   const failed =
     job?.status === "failed" ||
@@ -379,9 +386,33 @@ export default function Discovery({
               </p>
             )}
             {guidedMap && mode === "guided" && (
-              <DiscoveryPaths paths={savedBranches} selected={branches} onSelect={setBranches}
+              <>
+              <h3>{map?.discovery_checkpoint?.input_requests?.find((request) => request.kind === "login" && request.login_label)?.login_label ?? "Current login"}</h3>
+              <DiscoveryPaths paths={savedBranches} selected={branches} onSelect={(keys) => {
+                setSelectedRef(map?.discovery_checkpoint?.configuration.credential_ref ?? null);
+                setBranches(keys);
+              }}
                 disabled={!!jobError || continueDiscovery.isPending}
-                onRunAgain={(key) => continueDiscovery.mutate([key])} />
+                onRunAgain={(key) => {
+                  const ref = map?.discovery_checkpoint?.configuration.credential_ref ?? null;
+                  setSelectedRef(ref);
+                  continueAccount.mutate({ ref, keys: [key] });
+                }} />
+              {Object.entries(map?.discovery_checkpoint?.account_contexts ?? {}).filter(([ref]) =>
+                ref !== (map?.discovery_checkpoint?.configuration.credential_ref ?? "public")
+              ).map(([ref, context]) => {
+                const paths = context.jobs?.filter((job) => job.path.length > 0) ?? [];
+                if (!paths.length) return null;
+                const label = ref === "public" ? "Login choices" : context.input_requests?.find((request) => request.kind === "login" && request.login_label)?.login_label ?? "Saved account";
+                return <SavedAccountPaths key={ref} label={label} paths={paths} disabled={!!jobError || running}
+                  onContinue={(keys) => {
+                    const credential = ref === "public" ? null : ref;
+                    setSelectedRef(credential);
+                    continueAccount.mutate({ ref: credential, keys });
+                  }} />;
+              })}
+              {continueAccount.error && <p role="alert">{String(continueAccount.error)}</p>}
+              </>
             )}
             <label>
               Application URL

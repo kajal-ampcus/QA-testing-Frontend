@@ -3,6 +3,21 @@ import { CheckCircle2, ChevronRight, RotateCcw, Search } from "lucide-react";
 import type { DiscoveryCheckpoint } from "../../types/api";
 
 type Branch = NonNullable<DiscoveryCheckpoint["jobs"]>[number];
+export function SavedAccountPaths({ label, paths, disabled, onContinue }: {
+  label: string;
+  paths: Branch[];
+  disabled: boolean;
+  onContinue: (keys: string[]) => void;
+}) {
+  const [selected, setSelected] = useState<string[]>([]);
+  return <details open>
+    <summary>{label} — saved discovery</summary>
+    <DiscoveryPaths paths={paths} selected={selected} onSelect={setSelected}
+      disabled={disabled} onRunAgain={(key) => onContinue([key])} />
+    <button type="button" className="button secondary" disabled={disabled || selected.length === 0}
+      onClick={() => onContinue(selected)}>Continue selected paths for {label}</button>
+  </details>;
+}
 const stepLabel = (step: Branch["path"][number]) =>
   `${step.name || step.url || step.role}${step.value != null ? ` (${step.value})` : ""}`;
 

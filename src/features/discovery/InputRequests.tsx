@@ -1,15 +1,17 @@
 import { useState } from "react";
+import { Eye, EyeOff } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../../api/client";
 import type { DiscoveryInputRequest } from "../../types/api";
 import { Button, ErrorState } from "../../components/ui";
 
-function fieldControl(
-  request: DiscoveryInputRequest,
-  field: DiscoveryInputRequest["fields"][number],
-  value: string,
-  onChange: (next: string) => void,
-) {
+function FieldControl({ request, field, value, onChange }: {
+  request: DiscoveryInputRequest;
+  field: DiscoveryInputRequest["fields"][number];
+  value: string;
+  onChange: (next: string) => void;
+}) {
+  const [showPassword, setShowPassword] = useState(false);
   const id = `${request.id}-${field.key}`;
   const inputType = (field.input_type || "").toLowerCase();
   if (field.options && field.options.length > 0) {
@@ -24,7 +26,7 @@ function fieldControl(
       </select>
     );
   }
-  const type = /password/i.test(field.input_type || field.name)
+  const type = /password/i.test(`${field.input_type || ""} ${field.name}`)
     ? "password"
     : ["email", "number", "date", "file"].includes(inputType)
       ? inputType
@@ -41,6 +43,20 @@ function fieldControl(
         onChange={(event) => onChange(event.target.checked ? "true" : "")}
       />
     );
+  }
+  if (type === "password") {
+    return <div style={{ position: "relative" }}>
+      <input id={id} type={showPassword ? "text" : "password"} value={value}
+        autoComplete="off" style={{ paddingRight: "40px" }}
+        onChange={(event) => onChange(event.target.value)} />
+      <button type="button" className="icon-button"
+        aria-label={showPassword ? "Hide password" : "Show password"}
+        aria-pressed={showPassword} aria-controls={id}
+        onClick={() => setShowPassword((shown) => !shown)}
+        style={{ position: "absolute", right: "6px", top: "50%", transform: "translateY(-50%)" }}>
+        {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
+      </button>
+    </div>;
   }
   return (
     <input
@@ -157,12 +173,12 @@ export function InputRequests({
                     {field.name}
                     {field.required === false ? "" : " *"}
                   </span>
-                  {fieldControl(request, field, values[request.id]?.[field.key] || "", (next) =>
+                  <FieldControl request={request} field={field} value={values[request.id]?.[field.key] || ""} onChange={(next) =>
                     setValues((current) => ({
                       ...current,
                       [request.id]: { ...current[request.id], [field.key]: next },
-                    })),
-                  )}
+                    }))
+                  } />
                 </label>
               ))}
               {request.kind === "login" && !account[request.id] && <label>
