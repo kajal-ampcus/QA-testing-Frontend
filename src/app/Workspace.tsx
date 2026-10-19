@@ -482,9 +482,9 @@ export default function Workspace({ id }: { id: string }) {
               {stage === 6 && (
                 <Automation
                   projectId={id}
-                  tests={currentTests}
+                  tests={tests.data || []}
                   map={map.data}
-                  requirement={r}
+                  requirements={all}
                   onNext={() => navigateStage(7)}
                 />
               )}{" "}

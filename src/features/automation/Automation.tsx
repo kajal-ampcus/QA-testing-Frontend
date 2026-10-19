@@ -117,11 +117,7 @@ function LoginAccount({ projectId }: { projectId: string }) {
   );
 }
 
-function ineligibleReason(
-  test: TestCase,
-  requirement?: Requirement,
-  map?: AppMap | null,
-) {
+function ineligibleReason(test: TestCase, requirements: Requirement[]) {
   if (test.status === "OUTDATED") {
     return "Outdated. Revise the case and approve the new version.";
   }
@@ -130,16 +126,15 @@ function ineligibleReason(
     return `${test.status.replaceAll("_", " ")} cases cannot generate automation.`;
   }
 
-  if (
-    requirement &&
-    test.requirement_id === requirement.id &&
-    test.requirement_version !== requirement.version
-  ) {
-    return "Stale: the requirement version changed after this case was approved.";
+  const requirement = requirements.find(
+    (item) => item.id === test.requirement_id,
+  );
+  if (!requirement || requirement.status !== "APPROVED") {
+    return "The linked requirement is no longer approved.";
   }
 
-  if (map && test.application_map_id !== map.id) {
-    return "This case uses a different application map.";
+  if (test.requirement_version !== requirement.version) {
+    return "Stale: the requirement version changed after this case was approved.";
   }
 
   return null;
@@ -189,22 +184,24 @@ export default function Automation({
   projectId,
   tests,
   map,
-  requirement,
+  requirements,
   onNext,
 }: {
   projectId: string;
   tests: TestCase[];
   map?: AppMap | null;
-  requirement?: Requirement;
+  requirements: Requirement[];
   onNext?: () => void;
 }) {
   const rows = useMemo(
     () =>
-      tests.map((test) => ({
-        test,
-        reason: ineligibleReason(test, requirement, map),
-      })),
-    [tests, requirement, map],
+      tests
+        .filter((test) => test.status === "APPROVED")
+        .map((test) => ({
+          test,
+          reason: ineligibleReason(test, requirements),
+        })),
+    [tests, requirements],
   );
 
   const eligible = rows.filter((row) => !row.reason);
@@ -360,7 +357,7 @@ export default function Automation({
           {eligible.length === 0 ? (
             <EmptyState
               title="No approved cases yet"
-              description="Approve a test case on the previous step before generating automation."
+              description="Approve a current test case on the previous step before generating automation."
             />
           ) : (
             <ul className="automation-cases flow-picker">
