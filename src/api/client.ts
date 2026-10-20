@@ -449,11 +449,15 @@ export const api = {
     testCaseIds: string[],
     language: string,
     framework: string,
+    regenerate = false,
+    rediscover = true,
   ) =>
     request<AutomationGeneration>(`/automation/projects/${projectId}/generate`, {
       test_case_ids: testCaseIds,
       language,
       framework,
+      ...(regenerate ? { regenerate: true } : {}),
+      rediscover,
     }),
 
   downloadAutomation: async (projectId: string, generationId: string) => {

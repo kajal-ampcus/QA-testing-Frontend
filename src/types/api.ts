@@ -308,6 +308,7 @@ export interface BulkReviewResult {
 }
 
 export interface AutomationScript {
+  recovery?: { status?: string; attempts?: string[]; reason?: string; suggested_fix?: string };
   script_id: string;
   script_code: string;
   test_case_id: string;

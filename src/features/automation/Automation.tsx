@@ -218,12 +218,14 @@ export default function Automation({
 
   const generate = useAction(
     projectId,
-    (body: { ids: string[]; language: string; framework: string }) =>
+    (body: { ids: string[]; language: string; framework: string; regenerate?: boolean; rediscover?: boolean }) =>
       api.generateAutomation(
         projectId,
         body.ids,
         body.language,
         body.framework,
+        body.regenerate,
+        body.rediscover,
       ),
     (data) => {
       setOpenedId(data.generation_id);
@@ -265,6 +267,10 @@ export default function Automation({
         : opened.data;
 
   const preview = result?.sources.find((item) => item.path === file)?.content;
+  const blockedByCaseId = useMemo(
+    () => new Map((result?.blocked ?? []).map((item) => [item.test_case_id, item.reason])),
+    [result],
+  );
 
   const inSuiteIds = useMemo(() => {
     const source = result?.sources.find(
@@ -385,8 +391,10 @@ export default function Automation({
                     <ul>
                       {group.items.map(({ test }) => {
                         const written = inSuite.has(test.id);
+                        const recovery = result?.scripts.find((script) => script.test_case_id === test.id)?.recovery;
+                        const blockedReason = blockedByCaseId.get(test.id);
                         return (
-                          <li key={test.id}>
+                          <li key={test.id} className={blockedReason ? "automation-case-blocked" : undefined}>
                             <label>
                               <input
                                 type="checkbox"
@@ -402,10 +410,25 @@ export default function Automation({
                                   {written
                                     ? "In suite"
                                     : `Version ${test.current_version}`}
+                                  {blockedReason ? ` â€” Blocked: ${blockedReason}` : ""}
                                 </small>
                               </span>
                             </label>
-                            <StatusBadge status={test.status} />
+                            <StatusBadge status={blockedReason ? "BLOCKED" : test.status} />
+                            {recovery && <details>
+                              <summary>Mapping: {recovery.status}</summary>
+                              {recovery.attempts?.map((attempt, index) => <p key={index}>{attempt}</p>)}
+                              {recovery.suggested_fix && <p>{recovery.suggested_fix}</p>}
+                            </details>}
+                            {written && <div className="actions">
+                              {["Retry mapping", "Rediscover", "Regenerate"].map((label) => (
+                                <Button key={label} variant="secondary" busy={generate.isPending}
+                                  onClick={() => generate.mutate({
+                                    ids: [test.id], language, framework, regenerate: true,
+                                    rediscover: label === "Rediscover",
+                                  })}>{label}</Button>
+                              ))}
+                            </div>}
                           </li>
                         );
                       })}
@@ -484,6 +507,24 @@ export default function Automation({
                   ? `Add ${caseCount(toWrite.length)}`
                   : `Generate ${caseCount(toWrite.length)}`}
             </Button>
+            {suiteExists && eligible.length > 0 && (
+              <Button
+                variant="secondary"
+                busy={generate.isPending}
+                disabled={!canWrite}
+                onClick={() => {
+                  if (!canWrite) return;
+                  generate.mutate({
+                    ids: eligible.map(({ test }) => test.id),
+                    language: WRITABLE_LANGUAGE,
+                    framework: WRITABLE_FRAMEWORK,
+                    regenerate: true,
+                  });
+                }}
+              >
+                Regenerate current suite
+              </Button>
+            )}
 
             {onNext && (history.data?.generations.length ?? 0) > 0 && (
               <Button variant="secondary" onClick={onNext}>

@@ -75,6 +75,93 @@ function lines(value: string) {
     .filter(Boolean);
 }
 
+type ImportedCase = {
+  title: string;
+  objective: string;
+  expectedResult: string;
+  category: "POSITIVE" | "NEGATIVE" | "EDGE_CASE";
+  preconditions: string[];
+  stepNotes: string[];
+  inferred: string[];
+};
+
+const IMPORT_COLUMNS: Record<string, string[]> = {
+  title: ["test scenario", "title", "test case", "test case title", "scenario", "name"],
+  objective: ["objective", "description", "module", "what this verifies"],
+  expectedResult: ["expected result", "expected", "expected outcome", "result"],
+  category: ["category", "type", "test type"],
+  preconditions: ["preconditions", "precondition", "prerequisites"],
+  steps: ["test steps", "steps", "step", "steps to reproduce", "action"],
+  caseKey: ["test case", "test case id", "test case code", "tc code", "id"],
+};
+
+function normaliseColumn(value: string) {
+  return value.trim().toLowerCase().replace(/[_\-]+/g, " ").replace(/\s+/g, " ");
+}
+
+function readImportCell(row: Record<string, unknown>, column: keyof typeof IMPORT_COLUMNS) {
+  // Prefer the most explicit alias (for example, "Title" over the exported
+  // workbook's adjacent "Test Case" identifier column).
+  for (const alias of IMPORT_COLUMNS[column]) {
+    const entry = Object.entries(row).find(([name]) => normaliseColumn(name) === normaliseColumn(alias));
+    if (entry) return String(entry[1] ?? "").trim();
+  }
+  return "";
+}
+
+function splitImportLines(value: string) {
+  return value.split(/\r?\n|;/).map((item) => item.trim()).filter(Boolean);
+}
+
+/** Convert common test-case workbooks, including this application's export, into drafts.
+ * Empty required cells are filled from the useful information in the same row so no
+ * defined scenario is silently lost during import. */
+export function parseExcelTestCases(workbook: XLSX.WorkBook): ImportedCase[] {
+  const caseSheetName = workbook.SheetNames.find((name) => normaliseColumn(name) === "test cases")
+    ?? workbook.SheetNames[0];
+  const caseSheet = workbook.Sheets[caseSheetName];
+  const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(caseSheet, { defval: "" });
+  if (!rows.length) throw new Error("The selected workbook has no test-case rows.");
+
+  const stepsByCase = new Map<string, string[]>();
+  const stepSheetName = workbook.SheetNames.find((name) => normaliseColumn(name) === "test steps");
+  if (stepSheetName) {
+    const stepRows = XLSX.utils.sheet_to_json<Record<string, unknown>>(workbook.Sheets[stepSheetName], { defval: "" });
+    for (const row of stepRows) {
+      const key = readImportCell(row, "caseKey") || readImportCell(row, "title");
+      const step = readImportCell(row, "steps");
+      if (key && step) stepsByCase.set(key.toLowerCase(), [...(stepsByCase.get(key.toLowerCase()) ?? []), step]);
+    }
+  }
+
+  return rows.filter((row) => Object.values(row).some((value) => String(value).trim())).map((row, index) => {
+    const inferred: string[] = [];
+    const rowKey = readImportCell(row, "caseKey");
+    const suppliedTitle = readImportCell(row, "title");
+    const suppliedObjective = readImportCell(row, "objective");
+    const suppliedExpected = readImportCell(row, "expectedResult");
+    const inlineSteps = splitImportLines(readImportCell(row, "steps"));
+    const linkedSteps = stepsByCase.get((rowKey || suppliedTitle).toLowerCase()) ?? [];
+    const stepNotes = inlineSteps.length ? inlineSteps : linkedSteps;
+    const title = suppliedTitle || suppliedObjective || stepNotes[0] || `Imported test case ${index + 1}`;
+    if (!suppliedTitle) inferred.push("Title");
+    const objective = suppliedObjective || `Verify: ${title}`;
+    if (!suppliedObjective) inferred.push("Objective");
+    const expectedResult = suppliedExpected || `The application handles the scenario successfully: ${title}.`;
+    if (!suppliedExpected) inferred.push("Expected Result");
+    const kind = readImportCell(row, "category").toUpperCase();
+    return {
+      title,
+      objective,
+      expectedResult,
+      category: kind.includes("NEGATIVE") ? "NEGATIVE" : kind.includes("EDGE") ? "EDGE_CASE" : "POSITIVE",
+      preconditions: splitImportLines(readImportCell(row, "preconditions")),
+      stepNotes,
+      inferred,
+    };
+  });
+}
+
 function ReviewableRows({
   test,
   requirementLabel,
@@ -604,29 +691,24 @@ export default function TestCases({
       throw new Error("Select a requirement with acceptance criteria and complete discovery first.");
     }
     const workbook = XLSX.read(await file.arrayBuffer(), { type: "array" });
-    const sheet = workbook.Sheets[workbook.SheetNames[0]];
-    const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "" });
-    if (!rows.length) throw new Error("The selected workbook has no test-case rows.");
+    const cases = parseExcelTestCases(workbook);
     const acId = requirement.acceptance_criteria[0].id;
     const startState = map.states[0]?.state_code;
-    let imported = 0;
-    for (const row of rows) {
-      const scenario = String(row["Test Scenario"] || row["Title"] || "").trim();
-      const expected = String(row["Expected Result"] || "").trim();
-      if (!scenario || !expected) continue;
-      const type = String(row["Type"] || "").toUpperCase();
-      const category = type.includes("NEGATIVE") ? "NEGATIVE" : type.includes("EDGE") ? "EDGE_CASE" : "POSITIVE";
+    let inferred = 0;
+    for (const item of cases) {
       await api.createTest(projectId, {
-        requirement_id: requirement.id, application_map_id: map.id, title: scenario,
-        objective: String(row["Module"] || scenario), expected_result: expected, category,
-        traceability: [acId], preconditions: String(row["Preconditions"] || "").split(/\r?\n|;/).filter(Boolean),
-        step_notes: String(row["Test Steps"] || "").split(/\r?\n|;/).filter(Boolean), start_state_code: startState,
+        requirement_id: requirement.id, application_map_id: map.id, title: item.title,
+        objective: item.objective, expected_result: item.expectedResult, category: item.category,
+        traceability: [acId], preconditions: item.preconditions,
+        step_notes: item.stepNotes, start_state_code: startState,
       });
-      imported += 1;
+      inferred += item.inferred.length;
     }
-    if (!imported) throw new Error("No rows contained both Test Scenario and Expected Result.");
-    return imported;
-  }, (count) => setImportMessage(`${count} Excel test case${count === 1 ? "" : "s"} imported as drafts.`));
+    return { imported: cases.length, inferred };
+  }, ({ imported, inferred }) => setImportMessage(
+    `${imported} Excel test case${imported === 1 ? "" : "s"} imported as drafts.`
+      + (inferred ? ` ${inferred} missing field${inferred === 1 ? " was" : "s were"} filled from the row context.` : ""),
+  ));
   const bulkReview = useAction(
     projectId,
     () =>
