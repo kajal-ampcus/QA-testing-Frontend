@@ -73,6 +73,11 @@ export const api = {
   createProject: (body: { name: string; application_url: string }) =>
     request<Project>("/projects", body),
 
+  updateProject: (
+    id: string,
+    body: { name: string; application_url: string },
+  ) => request<Project>(`/projects/${id}`, body, undefined, "PATCH"),
+
   deleteProject: (id: string) =>
     request<void>(`/projects/${id}`, undefined, undefined, "DELETE"),
 

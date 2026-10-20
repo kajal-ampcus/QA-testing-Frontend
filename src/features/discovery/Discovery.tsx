@@ -1,15 +1,10 @@
-import { useEffect, useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
-import { Radar, RefreshCw, Square } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { KeyRound, Radar, RefreshCw, Square, X } from "lucide-react";
 import { api, ApiError } from "../../api/client";
 import { useAction } from "../../hooks/useAction";
 import { activeJob, human } from "../../utils/workflow";
-import type {
-  Project,
-  Requirement,
-  AppMap,
-  Job,
-} from "../../types/api";
+import type { Project, Requirement, AppMap, Job } from "../../types/api";
 import {
   Button,
   Card,
@@ -17,7 +12,6 @@ import {
   ErrorState,
   ProgressIndicator,
   NextAction,
-  Timeline,
 } from "../../components/ui";
 import { ApplicationAccess } from "./ApplicationAccess";
 import { InputRequests } from "./InputRequests";
@@ -25,7 +19,9 @@ import LiveDiscoveryGraph from "./LiveDiscoveryGraph";
 import type { ApplicationGraphData } from "../application-map/graphLayout";
 import { DiscoveryDiagnosticPanel } from "./DiscoveryDiagnosticPanel";
 import { loginFailureNotice } from "../application-map/ApplicationMap";
-import { DiscoveryPaths, SavedAccountPaths } from "./DiscoveryPaths";
+import { DiscoveryPaths } from "./DiscoveryPaths";
+import { explorerRoles, readExplorerState, selectPaths } from "./explorerModel";
+import { RoleSelector } from "./RoleSelector";
 import { SavedInputs } from "./SavedInputs";
 
 export default function Discovery({
@@ -55,13 +51,89 @@ export default function Discovery({
 }) {
   const queryClient = useQueryClient();
   const [url, setUrl] = useState(project.application_url || "");
-  const [mode, setMode] = useState<"guided" | "complete">("guided");
-  const [branches, setBranches] = useState<string[]>([]);
-  const [submittedMode, setSubmittedMode] = useState<"guided" | "complete" | null>(null);
+  const [mode, setMode] = useState<"guided" | "complete">(
+    map?.discovery_checkpoint &&
+      map.discovery_checkpoint.configuration.mode !== "guided"
+      ? "complete"
+      : "guided",
+  );
+  const accounts = useQuery({
+    queryKey: ["accounts", project.id],
+    queryFn: () => api.accounts(project.id),
+  });
+  const storageKey = `discovery-explorer:${project.id}:${map?.id ?? "new"}`;
+  const fallbackRole =
+    map?.discovery_checkpoint?.configuration.credential_ref ??
+    project.credential_ref ??
+    "public";
+  const readState = () => {
+    try {
+      return readExplorerState(localStorage.getItem(storageKey), fallbackRole);
+    } catch {
+      return readExplorerState(null, fallbackRole);
+    }
+  };
+  const [stored, setStored] = useState(() => ({
+    key: storageKey,
+    value: readState(),
+  }));
+  const explorer = stored.key === storageKey ? stored.value : readState();
+  const roles = explorerRoles(
+    map?.discovery_checkpoint,
+    accounts.data ?? project.accounts ?? [],
+  );
+  const role = roles.find((item) => item.id === explorer.active) ??
+    roles.find((item) => item.id === fallbackRole) ??
+    roles[0] ?? {
+      id: "public",
+      label: "Application entry",
+      ref: null,
+      paths: [],
+      configured: true,
+      choice: undefined,
+    };
+  const branches = (explorer.selections[role.id] ?? []).filter((key) =>
+    role.paths.some((path) => path.key === key),
+  );
+  const updateExplorer = (value: typeof explorer) => {
+    setStored({ key: storageKey, value });
+    try {
+      localStorage.setItem(storageKey, JSON.stringify(value));
+    } catch {
+      /* Keep in-memory state. */
+    }
+  };
+  const setBranches = (keys: string[]) => {
+    updateExplorer(selectPaths(explorer, role.id, keys));
+    setConfirmation(null);
+  };
+  const selectedRef = role.ref;
+  const setSelectedRef = (ref: string | null) => {
+    updateExplorer({ ...explorer, active: ref ?? "public" });
+    setConfirmation(null);
+  };
+  const [confirmation, setConfirmation] = useState<{
+    roleId: string;
+    label: string;
+    ref: string | null;
+    keys: string[];
+    scratch: boolean;
+  } | null>(null);
+  const [submittedMode, setSubmittedMode] = useState<
+    "guided" | "complete" | null
+  >(null);
+  const confirmationRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (confirmation) {
+      confirmationRef.current?.focus({ preventScroll: true });
+      confirmationRef.current?.scrollIntoView({ block: "center" });
+    }
+  }, [confirmation]);
   const guidedMap = map?.discovery_checkpoint?.configuration.mode === "guided";
   const [restartingMapId, setRestartingMapId] = useState<string | null>(null);
-  const awaitingFreshMap = restartingMapId !== null && map?.id === restartingMapId;
-  const savedBranches = awaitingFreshMap ? [] : map?.discovery_checkpoint?.jobs?.filter((item) => item.path.length > 0) ?? [];
+  const awaitingFreshMap =
+    restartingMapId !== null && map?.id === restartingMapId;
+  const savedBranches = awaitingFreshMap ? [] : role.paths;
   const [pages, setPages] = useState(
     map?.discovery_checkpoint?.configuration.max_pages ?? 150,
   );
@@ -76,18 +148,25 @@ export default function Discovery({
   );
   // Optional pre-discovery account. Leaving this empty uses the dynamic
   // credential request when the live login form is reached.
-  const [selectedRef, setSelectedRef] = useState<string | null>(
-    project.credential_ref ?? null,
-  );
   const [savedBadge, setSavedBadge] = useState(!!project.credential_ref);
-  const switchingAccount = !!guidedMap &&
-    (map?.discovery_checkpoint?.configuration.credential_ref ?? null) !== selectedRef;
+  const [accessOpen, setAccessOpen] = useState(false);
 
-  /**
-   * credential_ref of the account chosen for this run.
-   * Null means "not selected yet" — the ApplicationAccess panel auto-selects
-   * the default account when accounts load.
-   */
+  useEffect(() => {
+    if (!accessOpen) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setAccessOpen(false);
+    };
+    document.addEventListener("keydown", closeOnEscape);
+    return () => document.removeEventListener("keydown", closeOnEscape);
+  }, [accessOpen]);
+  const switchingAccount =
+    !!guidedMap &&
+    (map?.discovery_checkpoint?.configuration.credential_ref ?? null) !==
+      selectedRef;
+
+  useEffect(() => {
+    setConfirmation(null);
+  }, [url, mode, pages, depth, duration, workerLimit, map?.id]);
 
   useEffect(() => {
     const configuration = map?.discovery_checkpoint?.configuration;
@@ -120,37 +199,61 @@ export default function Discovery({
     project.id,
     async () => {
       setRestartingMapId(map?.id ?? null);
-      setBranches([]);
+
       try {
-        return await api.discover(
-      project.id,
-      discoveryBody(
-        false,
-        !!map && (mode === "guided" || (map.status === "PARTIAL" && !!map.discovery_checkpoint)),
-      ),
-        );
+        return await api.discover(project.id, {
+          ...discoveryBody(false, !!map),
+          credential_ref: null,
+        });
       } catch (error) {
         setRestartingMapId(null);
         throw error;
       }
     },
-    (data) => { setSubmittedMode(mode); setBranches([]); onStarted(data.job_id); },
-  );
-  const continueDiscovery = useAction(
-    project.id,
-    (selected: string[] | undefined) => api.discover(project.id, {
-      ...discoveryBody(true),
-      selected_branches: selected ?? (switchingAccount ? [] : branches),
-    }),
-    (data) => { setSubmittedMode(mode); setBranches([]); onStarted(data.job_id); },
+    (data) => {
+      setSubmittedMode(mode);
+      setConfirmation(null);
+      onStarted(data.job_id);
+    },
   );
   const continueAccount = useAction(
     project.id,
-    ({ ref, keys }: { ref: string | null; keys: string[] }) => api.discover(project.id, {
-      ...discoveryBody(true), credential_ref: ref, selected_branches: keys,
-    }),
-    (data) => { setSubmittedMode(mode); setBranches([]); onStarted(data.job_id); },
+    async (selection: NonNullable<typeof confirmation>) => {
+      const chosen = roles.find((item) => item.id === selection.roleId);
+      let ref = selection.ref;
+      let keys = selection.keys;
+      if (chosen?.choice && map) {
+        const response = await api.submitDiscoveryInput(
+          map.id,
+          chosen.choice.requestId,
+          [],
+          { choice_id: chosen.choice.choiceId },
+        );
+        if (response.job_id) return { job_id: response.job_id };
+        ref = response.credential_ref ?? null;
+        keys = response.selected_branches ?? [];
+        refreshMap();
+      }
+      return api.discover(project.id, {
+        ...discoveryBody(true),
+        credential_ref: ref,
+        selected_branches: keys,
+      });
+    },
+    (data) => {
+      setSubmittedMode(mode);
+      setConfirmation(null);
+      onStarted(data.job_id);
+    },
   );
+  const requestRun = (keys: string[], scratch = false) =>
+    setConfirmation({
+      roleId: role.id,
+      label: scratch || !map ? "Application entry" : role.label,
+      ref: scratch || !map ? null : role.ref,
+      keys: [...keys],
+      scratch,
+    });
   const stopDiscovery = useAction(
     project.id,
     () => api.stopDiscovery(project.id),
@@ -165,7 +268,7 @@ export default function Discovery({
     (activeJob(job?.status) ||
       (!terminalJob && map?.status === "RUNNING") ||
       discover.isPending ||
-      continueDiscovery.isPending || continueAccount.isPending);
+      continueAccount.isPending);
 
   const failed =
     job?.status === "failed" ||
@@ -175,7 +278,9 @@ export default function Discovery({
   const partial =
     !running &&
     (job?.result?.status === "PARTIAL" || map?.status === "PARTIAL");
-  const resumable = (partial || !!guidedMap) && !!map?.discovery_checkpoint;
+  const resumable =
+    ["PARTIAL", "COMPLETE"].includes(map?.status ?? "") &&
+    !!map?.discovery_checkpoint;
   const activeGuided = submittedMode ? submittedMode === "guided" : guidedMap;
 
   /**
@@ -196,7 +301,8 @@ export default function Discovery({
           <div>
             <h2>Explore your application</h2>
             <p>
-              Discover a page, choose its next paths, and generate tests from the observed screens.
+              Discover a page, choose its next paths, and generate tests from
+              the observed screens.
             </p>
           </div>
           <StatusBadge
@@ -212,18 +318,108 @@ export default function Discovery({
           />
         </div>
 
+        <RoleSelector
+          roles={awaitingFreshMap ? [] : roles}
+          active={role.id}
+          selectedCount={branches.length}
+          runningRef={
+            running
+              ? (map?.discovery_checkpoint?.configuration.credential_ref ??
+                "public")
+              : undefined
+          }
+          onSelect={(active) => {
+            updateExplorer({ ...explorer, active });
+            setConfirmation(null);
+          }}
+        />
+        {accounts.isPending && <p role="status">Loading saved roles…</p>}
+        {accounts.error && (
+          <ErrorState
+            error={accounts.error}
+            retry={() => void accounts.refetch()}
+          />
+        )}
+        {guidedMap && !awaitingFreshMap && (
+          <DiscoveryPaths
+            key={role.id}
+            paths={savedBranches}
+            selected={branches}
+            onSelect={setBranches}
+            disabled={false}
+            onRunAgain={(key) => requestRun([key])}
+            executionDisabled={running || !!jobError}
+          />
+        )}
+        {confirmation && (
+          <section
+            className="notice"
+            aria-label="Confirm discovery"
+            ref={confirmationRef}
+            tabIndex={-1}
+          >
+            <h3>Confirm discovery for {confirmation.label}</h3>
+            <p>
+              {confirmation.scratch
+                ? "Start from the application URL and discover its login options again. The current map remains in history."
+                : "Continue the combined map. Saved discoveries for every role are retained."}
+            </p>
+            <p>
+              {confirmation.ref
+                ? "Use this role’s saved account and isolated browser session."
+                : "Discovery will ask for login details when needed."}
+            </p>
+            <ul>
+              {confirmation.keys.map((key) => (
+                <li key={key}>
+                  {role.paths
+                    .find((path) => path.key === key)
+                    ?.path.map((step) => step.name || step.url || step.role)
+                    .join(" / ") ?? key}
+                </li>
+              ))}
+            </ul>
+            {!confirmation.keys.length && <p>Explore the role’s entry page.</p>}
+            <Button
+              type="button"
+              disabled={running || !!jobError}
+              onClick={() =>
+                confirmation.scratch || !map?.discovery_checkpoint
+                  ? discover.mutate()
+                  : continueAccount.mutate(confirmation)
+              }
+            >
+              Confirm and start discovery
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => setConfirmation(null)}
+            >
+              Cancel
+            </Button>
+            {continueAccount.error && (
+              <ErrorState error={continueAccount.error} />
+            )}
+          </section>
+        )}
+
         <div className="notice" role="status">
           <strong>
             {running
-              ? activeGuided ? "Guided discovery is running" : "Automatic discovery is running"
-              : mode === "guided" ? "Guided discovery: you choose the next path" : "Automatic discovery selected"}
+              ? activeGuided
+                ? "Guided discovery is running"
+                : "Automatic discovery is running"
+              : mode === "guided"
+                ? "Guided discovery: you choose the next path"
+                : "Automatic discovery selected"}
           </strong>
           <p>
             {running && !activeGuided
               ? "This run uses the previous automatic mode and will continue beyond login. Stop discovery, then start a guided map to choose each next page."
               : !running && mode === "complete"
                 ? "Automatic mode follows safe reachable paths without asking you to select each page. Choose Guided for step-by-step exploration."
-              : "Each selected page is inspected once. After login, discovery pauses on the landing page and shows its available paths below. It waits for your selection before following them."}
+                : "Each selected page is inspected once. After login, discovery pauses on the landing page and shows its available paths below. It waits for your selection before following them."}
           </p>
         </div>
 
@@ -252,12 +448,22 @@ export default function Discovery({
               }
             />
             <LiveDiscoveryGraph
-              flowGraph={(map?.discovery_checkpoint as { graph?: ApplicationGraphData } | undefined)?.graph ?? map?.coverage?.app_flow_graph as ApplicationGraphData | undefined}
+              flowGraph={
+                (
+                  map?.discovery_checkpoint as
+                    { graph?: ApplicationGraphData } | undefined
+                )?.graph ??
+                (map?.coverage?.app_flow_graph as
+                  ApplicationGraphData | undefined)
+              }
               states={map?.states ?? []}
               jobStatus={job?.status}
               stateCount={map?.states.length ?? 0}
-              elementCount={map?.states.reduce((n, s) => n + s.elements.length, 0) ?? 0}
+              elementCount={
+                map?.states.reduce((n, s) => n + s.elements.length, 0) ?? 0
+              }
               liveView={map?.discovery_checkpoint?.live_view}
+              actionLog={map?.discovery_checkpoint?.action_log}
             />
             <div className="actions">
               <Button
@@ -274,37 +480,69 @@ export default function Discovery({
           </>
         ) : null}
 
-        {awaitingFreshMap && <div className="notice" role="status">Starting a fresh discovery map. Previous path completion belongs to the earlier map and is not reused.</div>}
-        {!awaitingFreshMap && map?.discovery_checkpoint?.input_requests && (
-          <InputRequests
-            mapId={map.id}
-            projectId={project.id}
-            requests={map.discovery_checkpoint.input_requests}
-            running={running}
-            onSubmitted={() => {
-              refreshMap();
-              void queryClient.invalidateQueries({ queryKey: ["accounts", project.id] });
-              void queryClient.invalidateQueries({ queryKey: ["saved-inputs", project.id] });
-              void queryClient.invalidateQueries({ queryKey: ["workspace", project.id] });
-            }}
-            onResumed={onStarted}
-            onContinue={async (selectedBranches, credentialRef) => {
-              const nextRef = credentialRef !== undefined ? credentialRef : map.discovery_checkpoint?.configuration.credential_ref ?? null;
-              setSelectedRef(nextRef);
-              const response = await api.discover(project.id, {
-                ...discoveryBody(true), credential_ref: nextRef, selected_branches: selectedBranches,
-              });
-              onStarted(response.job_id);
-            }}
-          />
+        {awaitingFreshMap && (
+          <div className="notice" role="status">
+            Starting a fresh discovery map. Previous path completion belongs to
+            the earlier map and is not reused.
+          </div>
         )}
+        {!awaitingFreshMap &&
+          selectedRef ===
+            (map?.discovery_checkpoint?.configuration.credential_ref ?? null) &&
+          (role.configured || role.choice) &&
+          map?.discovery_checkpoint?.input_requests && (
+            <InputRequests
+              mapId={map.id}
+              projectId={project.id}
+              requests={map.discovery_checkpoint.input_requests.filter(
+                (request) => request.kind !== "login_choice",
+              )}
+              running={running}
+              onSubmitted={() => {
+                refreshMap();
+                void queryClient.invalidateQueries({
+                  queryKey: ["accounts", project.id],
+                });
+                void queryClient.invalidateQueries({
+                  queryKey: ["saved-inputs", project.id],
+                });
+                void queryClient.invalidateQueries({
+                  queryKey: ["workspace", project.id],
+                });
+              }}
+              onResumed={onStarted}
+              onContinue={async (selectedBranches, credentialRef) => {
+                const nextRef =
+                  credentialRef !== undefined
+                    ? credentialRef
+                    : (map.discovery_checkpoint?.configuration.credential_ref ??
+                      null);
+                setSelectedRef(nextRef);
+                const response = await api.discover(project.id, {
+                  ...discoveryBody(true),
+                  credential_ref: nextRef,
+                  selected_branches: selectedBranches,
+                });
+                onStarted(response.job_id);
+              }}
+            />
+          )}
 
         {/* Map metrics */}
         {map?.discovery_checkpoint?.progress && (
-          <dl className="metrics" aria-label="Discovery progress" aria-live="polite">
-            {Object.entries(map.discovery_checkpoint.progress).map(([key, value]) => (
-              <div key={key}><dt>{human(key)}</dt><dd>{String(value)}</dd></div>
-            ))}
+          <dl
+            className="metrics"
+            aria-label="Discovery progress"
+            aria-live="polite"
+          >
+            {Object.entries(map.discovery_checkpoint.progress).map(
+              ([key, value]) => (
+                <div key={key}>
+                  <dt>{human(key)}</dt>
+                  <dd>{String(value)}</dd>
+                </div>
+              ),
+            )}
           </dl>
         )}
         {map && (
@@ -350,7 +588,7 @@ export default function Discovery({
               </p>
               <p>
                 {partial
-                  ? "The graph already discovered is kept. Continue from where it stopped, or start from scratch."
+                  ? "Saved discoveries for every role are kept. Select a role and continue from its saved paths."
                   : map?.diagnostic_evidence?.termination_detail ||
                     "Check the application URL, browser access, and credentials before retrying."}
               </p>
@@ -369,50 +607,29 @@ export default function Discovery({
           <form
             onSubmit={(e) => {
               e.preventDefault();
-              discover.mutate();
+              requestRun([], !!map);
             }}
           >
             <label>
               Exploration mode
-              <select value={mode} onChange={(e) => setMode(e.target.value as "guided" | "complete")}>
+              <select
+                value={mode}
+                onChange={(e) =>
+                  setMode(e.target.value as "guided" | "complete")
+                }
+              >
                 <option value="guided">Guided — choose each next page</option>
-                <option value="complete">Automatic — explore safe reachable paths</option>
+                <option value="complete">
+                  Automatic — explore safe reachable paths
+                </option>
               </select>
             </label>
             {map && !guidedMap && mode === "guided" && (
               <p className="notice">
-                This map was created in automatic mode. Start a new guided map below to choose paths after each page.
-                The previous map remains stored as history; this starts again from the application URL.
+                This map was created in automatic mode. Start a new guided map
+                below to choose paths after each page. The previous map remains
+                stored as history; this starts again from the application URL.
               </p>
-            )}
-            {guidedMap && mode === "guided" && (
-              <>
-              <h3>{map?.discovery_checkpoint?.input_requests?.find((request) => request.kind === "login" && request.login_label)?.login_label ?? "Current login"}</h3>
-              <DiscoveryPaths paths={savedBranches} selected={branches} onSelect={(keys) => {
-                setSelectedRef(map?.discovery_checkpoint?.configuration.credential_ref ?? null);
-                setBranches(keys);
-              }}
-                disabled={!!jobError || continueDiscovery.isPending}
-                onRunAgain={(key) => {
-                  const ref = map?.discovery_checkpoint?.configuration.credential_ref ?? null;
-                  setSelectedRef(ref);
-                  continueAccount.mutate({ ref, keys: [key] });
-                }} />
-              {Object.entries(map?.discovery_checkpoint?.account_contexts ?? {}).filter(([ref]) =>
-                ref !== (map?.discovery_checkpoint?.configuration.credential_ref ?? "public")
-              ).map(([ref, context]) => {
-                const paths = context.jobs?.filter((job) => job.path.length > 0) ?? [];
-                if (!paths.length) return null;
-                const label = ref === "public" ? "Login choices" : context.input_requests?.find((request) => request.kind === "login" && request.login_label)?.login_label ?? "Saved account";
-                return <SavedAccountPaths key={ref} label={label} paths={paths} disabled={!!jobError || running}
-                  onContinue={(keys) => {
-                    const credential = ref === "public" ? null : ref;
-                    setSelectedRef(credential);
-                    continueAccount.mutate({ ref: credential, keys });
-                  }} />;
-              })}
-              {continueAccount.error && <p role="alert">{String(continueAccount.error)}</p>}
-              </>
             )}
             <label>
               Application URL
@@ -427,13 +644,22 @@ export default function Discovery({
 
             {selectedRef ? (
               <div className="focus-requirement">
-                <span className="badge good"><i /> Test account</span>
-                <span style={{ fontSize: "11px" }}>A saved account will sign in before discovery.</span>
+                <span className="badge good">
+                  <i /> Test account
+                </span>
+                <span style={{ fontSize: "11px" }}>
+                  A saved account will sign in before discovery.
+                </span>
               </div>
             ) : (
               <div className="focus-requirement">
-                <span className="badge warn"><i /> No account selected</span>
-                <span style={{ fontSize: "11px" }}>Discovery will ask for login values only if the application requires them.</span>
+                <span className="badge warn">
+                  <i /> No account selected
+                </span>
+                <span style={{ fontSize: "11px" }}>
+                  Discovery will ask for login values only if the application
+                  requires them.
+                </span>
               </div>
             )}
 
@@ -492,25 +718,41 @@ export default function Discovery({
               />
             </label>
             <p className="field-hint">
-              Guided discovery starts with the landing page and waits for your next selection.
-              Return to any saved path later, or review the map to generate tests.
-              Inspecting a page does not establish that its functionality passes tests.
+              Guided discovery starts with the landing page and waits for your
+              next selection. Return to any saved path later, or review the map
+              to generate tests. Inspecting a page does not establish that its
+              functionality passes tests.
             </p>
 
-            {(discover.error || continueDiscovery.error) && (
-              <ErrorState error={discover.error || continueDiscovery.error} />
+            {(discover.error || continueAccount.error) && (
+              <ErrorState error={discover.error || continueAccount.error} />
             )}
 
-            <div className="actions">
+            <div className="actions discovery-action-bar">
+              <span>
+                {role.label} · {branches.length} selected
+              </span>
               {resumable && (mode === "guided" ? guidedMap : !guidedMap) && (
                 <Button
                   type="button"
-                  busy={continueDiscovery.isPending}
-                  disabled={awaitingFreshMap || !!jobError || (mode === "guided" && (!guidedMap || (!switchingAccount && branches.length === 0)))}
-                  onClick={() => continueDiscovery.mutate(undefined)}
+                  busy={continueAccount.isPending}
+                  disabled={
+                    awaitingFreshMap ||
+                    !!jobError ||
+                    (!role.configured && !role.choice) ||
+                    (mode === "guided" &&
+                      !switchingAccount &&
+                      !role.choice &&
+                      branches.length === 0)
+                  }
+                  onClick={() => requestRun(branches)}
                 >
                   <RefreshCw size={16} />
-                  {mode === "guided" ? (switchingAccount ? "Discover selected account" : "Explore selected paths") : "Continue Discovery"}
+                  {mode === "guided"
+                    ? switchingAccount
+                      ? "Discover selected account"
+                      : "Explore selected paths"
+                    : "Continue Discovery"}
                 </Button>
               )}
               <Button
@@ -523,11 +765,13 @@ export default function Discovery({
                 ) : (
                   <Radar size={16} />
                 )}
-                {map && mode === "guided" ? "Start guided map from scratch" : resumable
-                  ? "Start from Scratch"
-                  : failed || partial
-                    ? "Retry discovery"
-                    : "Start discovery"}
+                {map && mode === "guided"
+                  ? "Start guided map from scratch"
+                  : resumable
+                    ? "Start from Scratch"
+                    : failed || partial
+                      ? "Retry discovery"
+                      : "Start discovery"}
               </Button>
               {map && !running && (
                 <Button type="button" variant="secondary" onClick={onNext}>
@@ -539,26 +783,34 @@ export default function Discovery({
         )}
 
         {/* Next action */}
-        {map && !running && (map.diagnostic_evidence || loginFailureNotice(map)) && (
-          <DiscoveryDiagnosticPanel
-            waitingForInput={map.termination_reason === "WAITING_FOR_INPUT"}
-            waitingForLoginChoice={map.discovery_checkpoint?.input_requests?.some((request) => request.kind === "login_choice" && request.status === "pending")}
-            diagnostic={
-              map.diagnostic_evidence ?? {
-                auth_attempted: true,
-                auth_succeeded: false,
-                login_error: loginFailureNotice(map),
-                screenshot_ref: null,
-                termination_detail:
-                  "Login was attempted and did not succeed, so pages after login were not discovered.",
-                failed_actions: [],
+        {map &&
+          !running &&
+          (map.diagnostic_evidence || loginFailureNotice(map)) && (
+            <DiscoveryDiagnosticPanel
+              waitingForInput={map.termination_reason === "WAITING_FOR_INPUT"}
+              waitingForLoginChoice={map.discovery_checkpoint?.input_requests?.some(
+                (request) =>
+                  request.kind === "login_choice" &&
+                  request.status === "pending",
+              )}
+              diagnostic={
+                map.diagnostic_evidence ?? {
+                  auth_attempted: true,
+                  auth_succeeded: false,
+                  login_error: loginFailureNotice(map),
+                  screenshot_ref: null,
+                  termination_detail:
+                    "Login was attempted and did not succeed, so pages after login were not discovered.",
+                  failed_actions: [],
+                }
               }
-            }
-            awaitingSelection={map.termination_reason === "AWAITING_BRANCH_SELECTION"}
-            status={map.status}
-            mapId={map.id}
-          />
-        )}
+              awaitingSelection={
+                map.termination_reason === "AWAITING_BRANCH_SELECTION"
+              }
+              status={map.status}
+              mapId={map.id}
+            />
+          )}
 
         {map && !running && (
           <NextAction
@@ -577,55 +829,59 @@ export default function Discovery({
       {/* ── Right: sidebar ───────────────────────────────────────────── */}
       <aside>
         <SavedInputs projectId={project.id} />
-        <ApplicationAccess
-          projectId={project.id}
-          running={running}
-          savedBadge={savedBadge}
-          promptUpdate={Boolean(map?.discovery_checkpoint?.credential_update_required)}
-          selectedRef={selectedRef}
-          onSelectRef={(ref) => {
-            setSelectedRef(ref);
-            setBranches([]);
-            setSavedBadge(!!ref);
-          }}
-        />
-
-        {/* Journey context card */}
-        <Card className="guide-card">
-          <span className="eyebrow">OBSERVE BEFORE YOU TEST</span>
-          <Timeline
-            items={[
-              {
-                title: "Approved intent",
-                detail: `${requirement.req_code} · Version ${requirement.version}`,
-                done: true,
-              },
-              {
-                title: job ? human(job.status) : "Application discovery",
-                detail: running
-                  ? "Live worker status"
-                  : "Ready to discover",
-                done: !running && map?.status === "COMPLETE",
-              },
-              {
-                title: "A map grounded in evidence",
-                detail: "Real states and observed elements.",
-                done: !running && map?.status === "COMPLETE",
-              },
-            ]}
-          />
-          {discoveredRole && (
-            <p
-              className="field-hint"
-              style={{ marginTop: "16px", borderTop: "1px solid #e0e8d8", paddingTop: "14px" }}
-            >
-              Last map discovered as role:{" "}
-              <strong>{discoveredRole}</strong>. Run again with a different
-              account to capture role-specific states.
-            </p>
-          )}
-        </Card>
       </aside>
+
+      <button
+        type="button"
+        className="application-access-launcher"
+        onClick={() => setAccessOpen(true)}
+        aria-haspopup="dialog"
+        aria-expanded={accessOpen}
+      >
+        <KeyRound size={17} />
+        <span>Application access</span>
+        {savedBadge && <span className="application-access-configured">Configured</span>}
+      </button>
+
+      {accessOpen && (
+        <div
+          className="application-access-backdrop"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setAccessOpen(false);
+          }}
+        >
+          <section
+            className="application-access-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Application access"
+          >
+            <button
+              type="button"
+              className="application-access-close"
+              onClick={() => setAccessOpen(false)}
+              aria-label="Close application access"
+            >
+              <X size={18} />
+            </button>
+            <ApplicationAccess
+              projectId={project.id}
+              running={running}
+              savedBadge={savedBadge}
+              promptUpdate={Boolean(
+                selectedRef ===
+                  map?.discovery_checkpoint?.configuration.credential_ref &&
+                map?.discovery_checkpoint?.credential_update_required,
+              )}
+              selectedRef={selectedRef}
+              onSelectRef={(ref) => {
+                setSelectedRef(ref);
+                setSavedBadge(!!ref);
+              }}
+            />
+          </section>
+        </div>
+      )}
     </div>
   );
 }

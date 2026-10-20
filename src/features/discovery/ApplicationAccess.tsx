@@ -38,7 +38,7 @@ import type { ProjectAccount } from "../../types/api";
 
 /* ── helpers ──────────────────────────────────────────────────── */
 
-const ROLE_SUGGESTIONS = ["Employee", "Admin", "Manager", "Customer", "Viewer", "Editor"];
+const ROLE_SUGGESTIONS = ["Employee", "Admin", "Kitchen", "Manager", "Customer", "Viewer", "Editor"];
 
 function roleColor(role: string): string {
   const map: Record<string, string> = {
@@ -482,21 +482,9 @@ export function ApplicationAccess({
   const list: ProjectAccount[] = accounts.data ?? [];
   const hasAccounts = accounts.isSuccess ? list.length > 0 : savedBadge;
 
-  // Keep the selected account on an active row. Saving again retires the
-  // previous credential id, so a stale selection must move to the new one.
-  useEffect(() => {
-    if (!accounts.isSuccess) return;
-    if (selectedRef === null || selectedRef.startsWith("session-login:")) return;
-    if (list.length === 0) {
-      if (selectedRef !== null) onSelectRef(null);
-      return;
-    }
-    const stillActive =
-      !!selectedRef && list.some((account) => account.credential_ref === selectedRef);
-    if (stillActive) return;
-    const next = list.find((account) => account.is_default) ?? list[0];
-    if (next.credential_ref !== selectedRef) onSelectRef(next.credential_ref);
-  }, [accounts.isSuccess, accounts.data, list, selectedRef, onSelectRef]);
+  // Saved checkpoints can refer to session accounts or retired credentials.
+  // Never silently replace their role with the default account. Saving an
+  // edited account explicitly selects the replacement through onDone above.
 
   return (
     <div className="card">

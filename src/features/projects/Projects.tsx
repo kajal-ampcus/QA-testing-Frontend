@@ -15,6 +15,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Trash2,
+  Pencil,
 } from "lucide-react";
 import { api } from "../../api/client";
 import type { Project } from "../../types/api";
@@ -135,6 +136,7 @@ export default function Projects() {
   });
   const [search, setSearch] = useState("");
   const [create, setCreate] = useState(false);
+  const [editTarget, setEditTarget] = useState<Project | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Project | null>(null);
   const navigate = useNavigate();
   const client = useQueryClient();
@@ -149,6 +151,21 @@ export default function Projects() {
     mutationFn: (id: string) => api.deleteProject(id),
     onSuccess: async () => {
       setDeleteTarget(null);
+      await client.invalidateQueries({ queryKey: ["projects"] });
+    },
+  });
+  const updateMutation = useMutation({
+    mutationFn: ({
+      project,
+      name,
+      application_url,
+    }: {
+      project: Project;
+      name: string;
+      application_url: string;
+    }) => api.updateProject(project.id, { name, application_url }),
+    onSuccess: async () => {
+      setEditTarget(null);
       await client.invalidateQueries({ queryKey: ["projects"] });
     },
   });
@@ -258,24 +275,36 @@ export default function Projects() {
       ) : (
         <div className="project-grid">
           {filtered.map((p) => (
-            <Link to={`/projects/${p.id}`} className="project-card" key={p.id}>
+            <article className="project-card" key={p.id}>
               <div className="project-card-top">
                 <div className="project-icon">
                   <FolderOpen size={23} />
                 </div>
-                <button
-                  type="button"
-                  className="icon-button project-delete"
-                  aria-label={`Delete ${p.name}`}
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    deleteMutation.reset();
-                    setDeleteTarget(p);
-                  }}
-                >
-                  <Trash2 size={16} />
-                </button>
+                <div className="project-card-actions">
+                  <button
+                    type="button"
+                    className="icon-button project-edit"
+                    aria-label={`Edit ${p.name}`}
+                    title="Edit project"
+                    onClick={() => {
+                      updateMutation.reset();
+                      setEditTarget(p);
+                    }}
+                  >
+                    <Pencil size={16} />
+                  </button>
+                  <button
+                    type="button"
+                    className="icon-button project-delete"
+                    aria-label={`Delete ${p.name}`}
+                    onClick={() => {
+                      deleteMutation.reset();
+                      setDeleteTarget(p);
+                    }}
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </div>
                 <ArrowUpRight size={18} />
               </div>
               <h3>{p.name}</h3>
@@ -285,11 +314,11 @@ export default function Projects() {
                   <i />
                   Project workspace
                 </span>
-                <span>
+                <Link to={`/projects/${p.id}`}>
                   Open journey <ArrowRight size={14} />
-                </span>
+                </Link>
               </footer>
-            </Link>
+            </article>
           ))}
         </div>
       )}
@@ -338,6 +367,54 @@ export default function Projects() {
             {mutation.error && <ErrorState error={mutation.error} />}
             <Button type="submit" busy={mutation.isPending}>
               Create project <ArrowRight size={16} />
+            </Button>
+          </form>
+        </DetailDrawer>
+      )}
+      {editTarget && (
+        <DetailDrawer
+          title="Edit project"
+          onClose={() => {
+            if (!updateMutation.isPending) setEditTarget(null);
+          }}
+        >
+          <p className="muted">
+            Update the project name or the application URL used for future discovery runs.
+          </p>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              const f = new FormData(e.currentTarget);
+              updateMutation.mutate({
+                project: editTarget,
+                name: String(f.get("name")).trim(),
+                application_url: String(f.get("url")).trim(),
+              });
+            }}
+          >
+            <label>
+              Project name
+              <input
+                name="name"
+                required
+                maxLength={200}
+                defaultValue={editTarget.name}
+              />
+            </label>
+            <label>
+              Application URL
+              <input
+                name="url"
+                type="url"
+                required
+                defaultValue={editTarget.application_url ?? ""}
+                placeholder="https://app.example.com"
+                pattern="https?://.*"
+              />
+            </label>
+            {updateMutation.error && <ErrorState error={updateMutation.error} />}
+            <Button type="submit" busy={updateMutation.isPending}>
+              Save changes <Check size={16} />
             </Button>
           </form>
         </DetailDrawer>

@@ -24,7 +24,7 @@ import {
   layoutApplicationGraph,
   type ApplicationGraphData,
 } from "../application-map/graphLayout";
-import { Globe, Wifi, Maximize2, Minimize2 } from "lucide-react";
+import { Globe, Wifi, Maximize2, Minimize2, Check, LoaderCircle, X } from "lucide-react";
 import "@xyflow/react/dist/style.css";
 import type { AppState, DiscoveryCheckpoint } from "../../types/api";
 
@@ -79,11 +79,14 @@ function ScanningPlaceholder({ phase }: { phase: string }) {
 function LiveBrowserPane({
   liveView,
   jobStatus,
+  actionLog,
 }: {
   liveView?: DiscoveryCheckpoint["live_view"];
   jobStatus?: string;
+  actionLog?: DiscoveryCheckpoint["action_log"];
 }) {
   const screenshot = liveView?.screenshot_ref;
+  const recentActions = [...(actionLog ?? [])].slice(-30).reverse();
   return (
     <div className="live-browser" aria-label="Live Chrome DevTools crawl">
       <div className="live-browser-chrome">
@@ -125,6 +128,31 @@ function LiveBrowserPane({
           "Watch the graph build as each working screen is confirmed"
         )}
       </div>
+      <section className="live-action-log" aria-label="Chrome DevTools MCP action log">
+        <div className="live-action-log-heading">
+          <span>Browser actions</span>
+          <span>{recentActions.length} recent</span>
+        </div>
+        {recentActions.length ? (
+          <ol className="live-action-list" aria-live="polite" aria-relevant="additions text">
+            {recentActions.map((action) => (
+              <li className={`live-action live-action--${action.status}`} key={action.id}>
+                <span className="live-action-icon" aria-hidden="true">
+                  {action.status === "running" ? <LoaderCircle size={14} /> :
+                    action.status === "success" ? <Check size={14} /> : <X size={14} />}
+                </span>
+                <span className="live-action-copy">
+                  <span className="live-action-description">{action.description}</span>
+                  {action.error ? <span className="live-action-error">{action.error}</span> : null}
+                </span>
+                <span className="live-action-status">{action.status}</span>
+              </li>
+            ))}
+          </ol>
+        ) : (
+          <p className="live-action-empty">MCP browser actions will appear here as discovery runs.</p>
+        )}
+      </section>
     </div>
   );
 }
@@ -135,6 +163,7 @@ export default function LiveDiscoveryGraph({
   elementCount,
   flowGraph,
   liveView,
+  actionLog,
 }: {
   states: AppState[];
   jobStatus?: string;
@@ -142,6 +171,7 @@ export default function LiveDiscoveryGraph({
   elementCount: number;
   flowGraph?: ApplicationGraphData;
   liveView?: DiscoveryCheckpoint["live_view"];
+  actionLog?: DiscoveryCheckpoint["action_log"];
 }) {
   const knownCodes = useRef<Set<string>>(new Set());
   const [newCodes, setNewCodes] = useState<Set<string>>(new Set());
@@ -167,13 +197,22 @@ export default function LiveDiscoveryGraph({
     return () => clearTimeout(timer);
   }, [states]);
 
-  const canvasRef = useRef<HTMLDivElement>(null);
+  const discoveryViewRef = useRef<HTMLDivElement>(null);
   const rfInstance = useRef<ReactFlowInstance<any, any> | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isWindowMode, setIsWindowMode] = useState(
+    jobStatus === "queued" || jobStatus === "in_progress",
+  );
+
+  useEffect(() => {
+    if (jobStatus === "queued" || jobStatus === "in_progress") {
+      setIsWindowMode(true);
+    }
+  }, [jobStatus]);
 
   const toggleFullscreen = async () => {
     if (!document.fullscreenElement) {
-      await canvasRef.current?.requestFullscreen();
+      await discoveryViewRef.current?.requestFullscreen();
     } else {
       await document.exitFullscreen();
     }
@@ -181,7 +220,7 @@ export default function LiveDiscoveryGraph({
 
   useEffect(() => {
     const handleFullscreenChange = () => {
-      const active = document.fullscreenElement === canvasRef.current;
+      const active = document.fullscreenElement === discoveryViewRef.current;
       setIsFullscreen(active);
       requestAnimationFrame(() => {
         rfInstance.current?.fitView({ padding: 0.25, maxZoom: 1.1 });
@@ -223,7 +262,10 @@ export default function LiveDiscoveryGraph({
   }));
 
   return (
-    <div className="live-graph-wrap">
+    <div
+      className={`live-graph-wrap ${isWindowMode ? "live-graph-wrap--window" : ""}`}
+      ref={discoveryViewRef}
+    >
       <div className="live-graph-header">
         <span className="live-graph-pulse-dot" />
         <span className="live-graph-header-label">Discovery run</span>
@@ -242,16 +284,30 @@ export default function LiveDiscoveryGraph({
             </>
           )}
         </div>
+        {isWindowMode && (
+          <button
+            type="button"
+            className="live-window-exit"
+            onClick={() => {
+              setIsWindowMode(false);
+              if (document.fullscreenElement) void document.exitFullscreen();
+            }}
+            title="Return to discovery workflow"
+          >
+            <Minimize2 size={15} />
+            Exit full view
+          </button>
+        )}
       </div>
 
       <div className="live-discovery-stack">
         <section className="live-crawl-section" aria-label="Live Chrome DevTools crawl">
           <div className="live-section-heading">Live Chrome DevTools crawl</div>
-          <LiveBrowserPane liveView={liveView} jobStatus={jobStatus} />
+          <LiveBrowserPane liveView={liveView} jobStatus={jobStatus} actionLog={actionLog} />
         </section>
         <section className="live-graph-section" aria-label="Application graph">
           <div className="live-section-heading">Application graph</div>
-          <div ref={canvasRef} className="live-graph-canvas">
+          <div className="live-graph-canvas">
             {states.length === 0 ? (
               <ScanningPlaceholder phase={jobStatus ?? ""} />
             ) : (

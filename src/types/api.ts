@@ -103,6 +103,13 @@ export interface DiscoveryCheckpoint {
     fingerprint?: string | null;
     action?: string;
   } | null;
+  action_log?: Array<{
+    id: string;
+    description: string;
+    status: "running" | "success" | "failed";
+    timestamp?: string;
+    error?: string;
+  }>;
   version: number;
   configuration: {
     credential_ref?: string | null;
