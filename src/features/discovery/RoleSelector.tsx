@@ -19,11 +19,7 @@ export function RoleSelector({
   const summary = (role: ExplorerRole) => {
     if (runningRef === role.ref || runningRef === role.id) return "In progress";
     if (!role.paths.length) return "Not explored";
-    const complete = role.paths.filter(
-      (path) => path.status === "completed",
-    ).length;
-    const failed = role.paths.filter((path) => path.status === "failed").length;
-    return `${complete}/${role.paths.length} complete${failed ? ` · ${failed} failed` : ""}`;
+    return `${selectedCount} selected`;
   };
   return (
     <section className="discovery-role-selector" aria-label="Discovery roles">
@@ -66,7 +62,7 @@ export function RoleSelector({
           </label>
           <p aria-live="polite">
             {selected
-              ? `${summary(selected)} · ${selectedCount} selected paths`
+              ? summary(selected)
               : "Choose a login to see its discovery paths."}
           </p>
         </>

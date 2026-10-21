@@ -11,7 +11,6 @@ import {
   StatusBadge,
   ErrorState,
   ProgressIndicator,
-  NextAction,
 } from "../../components/ui";
 import { ApplicationAccess } from "./ApplicationAccess";
 import { InputRequests } from "./InputRequests";
@@ -119,9 +118,6 @@ export default function Discovery({
     keys: string[];
     scratch: boolean;
   } | null>(null);
-  const [submittedMode, setSubmittedMode] = useState<
-    "guided" | "complete" | null
-  >(null);
   const confirmationRef = useRef<HTMLElement>(null);
   useEffect(() => {
     if (confirmation) {
@@ -211,7 +207,6 @@ export default function Discovery({
       }
     },
     (data) => {
-      setSubmittedMode(mode);
       setConfirmation(null);
       onStarted(data.job_id);
     },
@@ -241,7 +236,6 @@ export default function Discovery({
       });
     },
     (data) => {
-      setSubmittedMode(mode);
       setConfirmation(null);
       onStarted(data.job_id);
     },
@@ -281,7 +275,6 @@ export default function Discovery({
   const resumable =
     ["PARTIAL", "COMPLETE"].includes(map?.status ?? "") &&
     !!map?.discovery_checkpoint;
-  const activeGuided = submittedMode ? submittedMode === "guided" : guidedMap;
 
   /**
    * Derive the role name shown in the "Discovered as" badge on the map.
@@ -291,7 +284,7 @@ export default function Discovery({
   const discoveredRole = map?.discovered_as_role ?? null;
 
   return (
-    <div className="two-column">
+    <div className="two-column discovery-layout">
       {/* ── Left: discovery card ─────────────────────────────────────── */}
       <Card>
         <div className="card-heading">
@@ -301,8 +294,7 @@ export default function Discovery({
           <div>
             <h2>Explore your application</h2>
             <p>
-              Discover a page, choose its next paths, and generate tests from
-              the observed screens.
+              Choose pages to explore and build tests from what you find.
             </p>
           </div>
           <StatusBadge
@@ -404,25 +396,6 @@ export default function Discovery({
           </section>
         )}
 
-        <div className="notice" role="status">
-          <strong>
-            {running
-              ? activeGuided
-                ? "Guided discovery is running"
-                : "Automatic discovery is running"
-              : mode === "guided"
-                ? "Guided discovery: you choose the next path"
-                : "Automatic discovery selected"}
-          </strong>
-          <p>
-            {running && !activeGuided
-              ? "This run uses the previous automatic mode and will continue beyond login. Stop discovery, then start a guided map to choose each next page."
-              : !running && mode === "complete"
-                ? "Automatic mode follows safe reachable paths without asking you to select each page. Choose Guided for step-by-step exploration."
-                : "Each selected page is inspected once. After login, discovery pauses on the landing page and shows its available paths below. It waits for your selection before following them."}
-          </p>
-        </div>
-
         {/* Job error */}
         {jobError ? (
           <>
@@ -481,10 +454,7 @@ export default function Discovery({
         ) : null}
 
         {awaitingFreshMap && (
-          <div className="notice" role="status">
-            Starting a fresh discovery map. Previous path completion belongs to
-            the earlier map and is not reused.
-          </div>
+          <p className="discovery-inline-status" role="status">Starting a fresh map…</p>
         )}
         {!awaitingFreshMap &&
           selectedRef ===
@@ -528,46 +498,23 @@ export default function Discovery({
             />
           )}
 
-        {/* Map metrics */}
-        {map?.discovery_checkpoint?.progress && (
-          <dl
-            className="metrics"
-            aria-label="Discovery progress"
-            aria-live="polite"
-          >
-            {Object.entries(map.discovery_checkpoint.progress).map(
-              ([key, value]) => (
-                <div key={key}>
-                  <dt>{human(key)}</dt>
-                  <dd>{String(value)}</dd>
-                </div>
-              ),
-            )}
-          </dl>
-        )}
         {map && (
-          <div className="metrics">
-            <div>
-              <strong>{map.states.length}</strong>
-              <span>Observed states</span>
+          <details className="discovery-details">
+            <summary>Map details</summary>
+            <div className="discovery-detail-stats">
+              <span><strong>{map.states.length}</strong> screens</span>
+              <span><strong>{map.states.reduce((n, s) => n + s.elements.length, 0)}</strong> controls</span>
+              <span><strong>v{map.version}</strong> map</span>
+              {discoveredRole && <span><strong>{discoveredRole}</strong> role</span>}
             </div>
-            <div>
-              <strong>
-                {map.states.reduce((n, s) => n + s.elements.length, 0)}
-              </strong>
-              <span>Observed elements</span>
-            </div>
-            <div>
-              <strong>v{map.version}</strong>
-              <span>Application map</span>
-            </div>
-            {discoveredRole && (
-              <div>
-                <strong style={{ fontSize: "16px" }}>{discoveredRole}</strong>
-                <span>Discovered as</span>
-              </div>
+            {map.discovery_checkpoint?.progress && (
+              <dl className="metrics" aria-label="Discovery progress" aria-live="polite">
+                {Object.entries(map.discovery_checkpoint.progress).map(([key, value]) => (
+                  <div key={key}><dt>{human(key)}</dt><dd>{String(value)}</dd></div>
+                ))}
+              </dl>
             )}
-          </div>
+          </details>
         )}
 
         {/* Failure / partial notice */}
@@ -642,96 +589,42 @@ export default function Discovery({
               />
             </label>
 
-            {selectedRef ? (
-              <div className="focus-requirement">
-                <span className="badge good">
-                  <i /> Test account
-                </span>
-                <span style={{ fontSize: "11px" }}>
-                  A saved account will sign in before discovery.
-                </span>
-              </div>
-            ) : (
-              <div className="focus-requirement">
-                <span className="badge warn">
-                  <i /> No account selected
-                </span>
-                <span style={{ fontSize: "11px" }}>
-                  Discovery will ask for login values only if the application
-                  requires them.
-                </span>
-              </div>
-            )}
-
-            <div className="focus-requirement">
-              <span className="badge good">
-                <i />
-                Approved focus
+            <div className="discovery-run-context">
+              <span className={`badge ${selectedRef ? "good" : "warn"}`}>
+                <i /> {selectedRef ? "Test account selected" : "Login on demand"}
               </span>
-              <span>
-                {requirement.req_code} · v{requirement.version} ·{" "}
-                {requirement.title}
+              <span title={requirement.title}>
+                {requirement.req_code} · {requirement.title}
               </span>
             </div>
 
-            <div className="form-grid three">
+            <details className="discovery-details discovery-advanced">
+              <summary>Advanced settings</summary>
+              <div className="form-grid three">
+                <label>
+                  Maximum pages
+                  <input type="number" min={1} required value={pages} onChange={(e) => setPages(+e.target.value)} />
+                </label>
+                <label>
+                  Maximum depth
+                  <input type="number" min={0} required value={depth} onChange={(e) => setDepth(+e.target.value)} />
+                </label>
+                <label>
+                  Time limit (seconds)
+                  <input type="number" min={1} required value={duration} onChange={(e) => setDuration(+e.target.value)} />
+                </label>
+              </div>
               <label>
-                Maximum pages
-                <input
-                  type="number"
-                  min={1}
-                  required
-                  value={pages}
-                  onChange={(e) => setPages(+e.target.value)}
-                />
+                Parallel browser workers
+                <input type="number" min={1} max={5} required value={workerLimit} onChange={(e) => setWorkerLimit(+e.target.value)} />
               </label>
-              <label>
-                Maximum depth
-                <input
-                  type="number"
-                  min={0}
-                  required
-                  value={depth}
-                  onChange={(e) => setDepth(+e.target.value)}
-                />
-              </label>
-              <label>
-                Time limit (seconds)
-                <input
-                  type="number"
-                  min={1}
-                  required
-                  value={duration}
-                  onChange={(e) => setDuration(+e.target.value)}
-                />
-              </label>
-            </div>
-            <label>
-              Parallel browser workers
-              <input
-                type="number"
-                min={1}
-                max={5}
-                required
-                value={workerLimit}
-                onChange={(e) => setWorkerLimit(+e.target.value)}
-              />
-            </label>
-            <p className="field-hint">
-              Guided discovery starts with the landing page and waits for your
-              next selection. Return to any saved path later, or review the map
-              to generate tests. Inspecting a page does not establish that its
-              functionality passes tests.
-            </p>
+            </details>
 
             {(discover.error || continueAccount.error) && (
               <ErrorState error={discover.error || continueAccount.error} />
             )}
 
             <div className="actions discovery-action-bar">
-              <span>
-                {role.label} · {branches.length} selected
-              </span>
               {resumable && (mode === "guided" ? guidedMap : !guidedMap) && (
                 <Button
                   type="button"
@@ -812,18 +705,6 @@ export default function Discovery({
             />
           )}
 
-        {map && !running && (
-          <NextAction
-            title={
-              map.status === "COMPLETE"
-                ? "Your application, connected"
-                : "Inspect the observations"
-            }
-            description="Explore the discovered states and their navigation paths."
-            label="Review application map"
-            onClick={onNext}
-          />
-        )}
       </Card>
 
       {/* ── Right: sidebar ───────────────────────────────────────────── */}

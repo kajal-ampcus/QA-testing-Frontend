@@ -77,10 +77,7 @@ export function DiscoveryPaths({
   return (
     <section className="discovery-paths" aria-label="Saved discovery paths">
       <div className="discovery-paths-heading">
-        <div>
-          <h3>Paths for this role</h3>
-          <p>Select routes to explore or inspect a completed page again.</p>
-        </div>
+        <h3>Paths for this role</h3>
         <span className="badge good">
           {completed} / {paths.length} complete
         </span>
@@ -173,7 +170,7 @@ export function DiscoveryPaths({
                       />
                       <span>
                         {stepLabel(branch.path[branch.path.length - 1])}
-                        <small className="discovery-path-context">
+                        <small className="discovery-path-context" title={route(branch)}>
                           {route(branch)}
                           {branch.path.at(-1)?.url && (
                             <span>{branch.path.at(-1)?.url}</span>
@@ -244,11 +241,6 @@ export function DiscoveryPaths({
           </nav>
         )}
       </div>
-      <p className="field-hint">
-        Complete means this page was inspected, not that its features passed
-        testing. Each route has its own status. Selections are saved for this
-        role.
-      </p>
     </section>
   );
 }

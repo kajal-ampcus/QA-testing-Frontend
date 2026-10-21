@@ -6,7 +6,7 @@
  * the crawl is going while the graph grows. Playwright is not used here.
  */
 
-import { useMemo, useEffect, useRef, useState } from "react";
+import { useMemo, useEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
 import {
   ReactFlow,
   Background,
@@ -198,7 +198,17 @@ export default function LiveDiscoveryGraph({
   }, [states]);
 
   const discoveryViewRef = useRef<HTMLDivElement>(null);
+  const splitRef = useRef<HTMLDivElement>(null);
   const rfInstance = useRef<ReactFlowInstance<any, any> | null>(null);
+  const [panelRatio, setPanelRatio] = useState(() => {
+    try {
+      const saved = Number(sessionStorage.getItem("discovery-run-panel-ratio"));
+      return Number.isFinite(saved) && saved >= 0.25 && saved <= 0.75 ? saved : 0.5;
+    } catch {
+      return 0.5;
+    }
+  });
+  const [focusedPanel, setFocusedPanel] = useState<"browser" | "graph" | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isWindowMode, setIsWindowMode] = useState(
     jobStatus === "queued" || jobStatus === "in_progress",
@@ -216,6 +226,26 @@ export default function LiveDiscoveryGraph({
     } else {
       await document.exitFullscreen();
     }
+  };
+
+  const resizePanels = (clientX: number) => {
+    const bounds = splitRef.current?.getBoundingClientRect();
+    if (!bounds || bounds.width <= 0) return;
+    const dividerWidth = 8;
+    const available = bounds.width - dividerWidth;
+    const minBrowser = Math.min(320, available * 0.4);
+    const minGraph = Math.min(320, available * 0.4);
+    const next = Math.max(minBrowser / available, Math.min((available - minGraph) / available, (clientX - bounds.left) / available));
+    setPanelRatio(next);
+    try { sessionStorage.setItem("discovery-run-panel-ratio", String(next)); } catch { /* Storage may be disabled. */ }
+  };
+
+  const handleDividerKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+    event.preventDefault();
+    const bounds = splitRef.current?.getBoundingClientRect();
+    if (!bounds) return;
+    resizePanels(bounds.left + (bounds.width - 8) * (panelRatio + (event.key === "ArrowRight" ? 0.03 : -0.03)));
   };
 
   useEffect(() => {
@@ -300,13 +330,59 @@ export default function LiveDiscoveryGraph({
         )}
       </div>
 
-      <div className="live-discovery-stack">
+      <div
+        className={`live-discovery-stack${focusedPanel ? ` live-discovery-stack--${focusedPanel}` : ""}`}
+        ref={splitRef}
+        style={{ "--live-browser-column": `calc(${panelRatio * 100}% - ${panelRatio * 8}px)` } as CSSProperties}
+      >
         <section className="live-crawl-section" aria-label="Live Chrome DevTools crawl">
-          <div className="live-section-heading">Live Chrome DevTools crawl</div>
+          <div className="live-section-heading">
+            <span>Live Chrome DevTools crawl</span>
+            <button type="button" className="live-panel-view-btn" onClick={() => setFocusedPanel(focusedPanel === "browser" ? null : "browser")} aria-label={focusedPanel === "browser" ? "Return to split view" : "Expand website preview"} title={focusedPanel === "browser" ? "Return to split view" : "Expand website preview"}>
+              {focusedPanel === "browser" ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
+              {focusedPanel === "browser" ? "Split view" : "Full view"}
+            </button>
+          </div>
           <LiveBrowserPane liveView={liveView} jobStatus={jobStatus} actionLog={actionLog} />
         </section>
+        <div
+          className="live-panel-divider"
+          role="separator"
+          aria-label="Resize website preview and application graph"
+          aria-orientation="vertical"
+          aria-valuenow={Math.round(panelRatio * 100)}
+          aria-valuemin={25}
+          aria-valuemax={75}
+          tabIndex={0}
+          onKeyDown={handleDividerKeyDown}
+          onPointerDown={(event) => {
+            event.preventDefault();
+            event.currentTarget.setPointerCapture(event.pointerId);
+            event.currentTarget.classList.add("is-dragging");
+            resizePanels(event.clientX);
+          }}
+          onPointerMove={(event) => {
+            if (event.currentTarget.hasPointerCapture(event.pointerId)) resizePanels(event.clientX);
+          }}
+          onPointerUp={(event) => {
+            if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+            event.currentTarget.classList.remove("is-dragging");
+          }}
+          onPointerCancel={(event) => {
+            if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+            event.currentTarget.classList.remove("is-dragging");
+          }}
+        >
+          <span />
+        </div>
         <section className="live-graph-section" aria-label="Application graph">
-          <div className="live-section-heading">Application graph</div>
+          <div className="live-section-heading">
+            <span>Application graph</span>
+            <button type="button" className="live-panel-view-btn" onClick={() => setFocusedPanel(focusedPanel === "graph" ? null : "graph")} aria-label={focusedPanel === "graph" ? "Return to split view" : "Expand application graph"} title={focusedPanel === "graph" ? "Return to split view" : "Expand application graph"}>
+              {focusedPanel === "graph" ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
+              {focusedPanel === "graph" ? "Split view" : "Full view"}
+            </button>
+          </div>
           <div className="live-graph-canvas">
             {states.length === 0 ? (
               <ScanningPlaceholder phase={jobStatus ?? ""} />

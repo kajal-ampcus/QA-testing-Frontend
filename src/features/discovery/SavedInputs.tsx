@@ -41,48 +41,50 @@ export function SavedInputs({ projectId }: { projectId: string }) {
   };
 
   return (
-    <div className="saved-inputs">
-      <h3>Saved application inputs</h3>
-      <p>Reusable values for this application. Passwords stay masked. One-time codes are not kept.</p>
-      {rows.map((row) => (
-        <form
-          key={row.id}
-          className="input-request"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void save(row.id, row.fields.map((field) => field.key));
-          }}
-        >
-          <strong>{row.page_key}</strong>
-          {row.fields.map((field) => (
-            <label className="field" key={field.key}>
-              <span>
-                {field.name}
-                {field.sensitive ? " (saved)" : `: ${field.preview}`}
-              </span>
-              <input
-                type={field.sensitive ? "password" : "text"}
-                autoComplete="off"
-                placeholder={field.sensitive ? "••••" : "Update value"}
-                value={drafts[row.id]?.[field.key] || ""}
-                onChange={(event) =>
-                  setDrafts((current) => ({
-                    ...current,
-                    [row.id]: { ...current[row.id], [field.key]: event.target.value },
-                  }))
-                }
-              />
-            </label>
-          ))}
-          <div className="actions">
-            <Button type="submit">Update</Button>
-            <Button type="button" variant="secondary" onClick={() => void remove(row.id)}>
-              Delete
-            </Button>
-          </div>
-        </form>
-      ))}
-      {error ? <ErrorState error={error} /> : null}
-    </div>
+    <details className="discovery-details saved-inputs-details">
+      <summary>Saved application inputs ({rows.length})</summary>
+      <div className="saved-inputs">
+        <p>Reusable values. Passwords stay masked; one-time codes are not saved.</p>
+        {rows.map((row) => (
+          <form
+            key={row.id}
+            className="input-request"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void save(row.id, row.fields.map((field) => field.key));
+            }}
+          >
+            <strong>{row.page_key}</strong>
+            {row.fields.map((field) => (
+              <label className="field" key={field.key}>
+                <span>
+                  {field.name}
+                  {field.sensitive ? " (saved)" : `: ${field.preview}`}
+                </span>
+                <input
+                  type={field.sensitive ? "password" : "text"}
+                  autoComplete="off"
+                  placeholder={field.sensitive ? "••••" : "Update value"}
+                  value={drafts[row.id]?.[field.key] || ""}
+                  onChange={(event) =>
+                    setDrafts((current) => ({
+                      ...current,
+                      [row.id]: { ...current[row.id], [field.key]: event.target.value },
+                    }))
+                  }
+                />
+              </label>
+            ))}
+            <div className="actions">
+              <Button type="submit">Update</Button>
+              <Button type="button" variant="secondary" onClick={() => void remove(row.id)}>
+                Delete
+              </Button>
+            </div>
+          </form>
+        ))}
+        {error ? <ErrorState error={error} /> : null}
+      </div>
+    </details>
   );
 }

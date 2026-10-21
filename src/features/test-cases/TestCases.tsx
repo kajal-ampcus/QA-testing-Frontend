@@ -672,6 +672,7 @@ export default function TestCases({
   const [exportError, setExportError] = useState("");
   const [editingId, setEditingId] = useState<string>();
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [expandedFlows, setExpandedFlows] = useState<Set<string>>(new Set());
   const [bulkReviewer, setBulkReviewer] = useState("");
   const importInput = useRef<HTMLInputElement>(null);
   const [importMessage, setImportMessage] = useState("");
@@ -742,6 +743,10 @@ export default function TestCases({
   const flowGroups = useMemo(
     () => groupByFlow(filtered, (test) => flowNameForCase(test, map)),
     [filtered, map],
+  );
+  const allFlowsExpanded = flowGroups.length > 0 && flowGroups.every((group) => expandedFlows.has(group.flow));
+  const toggleAllFlows = () => setExpandedFlows(
+    allFlowsExpanded ? new Set() : new Set(flowGroups.map((group) => group.flow)),
   );
   const hasApprovedForCurrentMap = activeTests.some(
     (test) => test.status === "APPROVED" && test.application_map_id === map?.id,
@@ -945,6 +950,14 @@ export default function TestCases({
             ))}
           </select>
         </div>
+        {!!flowGroups.length && (
+          <div className="test-flow-controls">
+            <span>{flowGroups.length} section{flowGroups.length === 1 ? "" : "s"}</span>
+            <button type="button" onClick={toggleAllFlows}>
+              {allFlowsExpanded ? "Collapse all" : "Expand all"}
+            </button>
+          </div>
+        )}
         {!!reviewable.length && (
           <div className="bulk-review-bar">
             <label className="review-select-all">
@@ -1017,16 +1030,18 @@ export default function TestCases({
                   </th>
                 </tr>
               </thead>
-              <tbody>
-                {flowGroups.flatMap((group) => {
+              {flowGroups.map((group, groupIndex) => {
                   const groupReviewableIds = group.items
                     .filter((test) => ["DRAFT", "PENDING_APPROVAL", "REJECTED"].includes(test.status))
                     .map((test) => test.id);
                   const groupSelected = groupReviewableIds.length > 0 &&
                     groupReviewableIds.every((id) => selectedIds.has(id));
-                  return [
-                  <tr className="test-flow-row" key={`flow-${group.flow}`}>
+                  const expanded = expandedFlows.has(group.flow);
+                  const groupId = `test-flow-content-${groupIndex}`;
+                  return <tbody key={group.flow}>
+                  <tr className={`test-flow-row${expanded ? " is-expanded" : ""}`}>
                     <td colSpan={reviewable.length > 0 ? 7 : 6}>
+                      <div className="test-flow-header">
                       {groupReviewableIds.length > 0 && (
                         <label className="test-flow-select">
                           <input
@@ -1047,11 +1062,26 @@ export default function TestCases({
                           <span className="sr-only">Select all {group.flow} test cases</span>
                         </label>
                       )}
-                      <strong>{group.flow}</strong>
-                      <span>{group.items.length} case{group.items.length === 1 ? "" : "s"}</span>
+                      <button
+                        type="button"
+                        className="test-flow-toggle"
+                        aria-expanded={expanded}
+                        aria-controls={groupId}
+                        onClick={() => setExpandedFlows((current) => {
+                          const next = new Set(current);
+                          if (next.has(group.flow)) next.delete(group.flow);
+                          else next.add(group.flow);
+                          return next;
+                        })}
+                      >
+                        <ChevronRight size={16} aria-hidden="true" />
+                        <strong>{group.flow}</strong>
+                        <span>{group.items.length} case{group.items.length === 1 ? "" : "s"}</span>
+                      </button>
+                      </div>
                     </td>
-                  </tr>,
-                  ...group.items.map((t) => {
+                  </tr>
+                  {expanded && group.items.map((t) => {
                     const r = requirements.find((r) => r.id === t.requirement_id);
                     const stale =
                       r?.version !== t.requirement_version ||
@@ -1086,10 +1116,9 @@ export default function TestCases({
                         projectId={projectId}
                       />
                     );
-                  }),
-                ];
+                  })}
+                </tbody>;
                 })}
-              </tbody>
             </table>
           </div>
         )}
