@@ -450,11 +450,45 @@ export default function Execution({
   };
   const pinnedRun = pinnedId ? loadedRuns.find((item) => item.id === pinnedId) : undefined;
   const showCombined = resultsMode === "all" && !pinnedId;
+  // Keep the summary scoped to the current run, including after completion.
+  // Clear the previous result while a new execution is being started.
+  const currentRun = booting ? undefined :
+    (run?.id === latestRunId ? run : undefined) ||
+    latestLoaded || generationRuns.find((item) => item.id === latestRunId);
+  const currentSummary = currentRun?.summary;
+  const passedCount = Number(currentSummary?.passed) || 0;
+  const failedCount = (Number(currentSummary?.failed) || 0) + (Number(currentSummary?.error) || 0);
+  const skippedCount = Number(currentSummary?.skipped) || 0;
+  const runCounts = {
+    "Total tests": passedCount + failedCount + skippedCount,
+    Passed: passedCount,
+    Failed: failedCount,
+    Running: currentRun?.status === "RUNNING" || currentRun?.status === "QUEUED" ? 1 : 0,
+    Cancelled: currentRun?.status === "CANCELLED" ? 1 : 0,
+    Skipped: skippedCount,
+  };
 
   return (
-    <div className="two-column">
-      <div className="stack">
-        <Card>
+    <div className="execution-page">
+        <Card className="execution-history-card">
+          <div className="card-heading">
+            <div>
+              <h2>Current execution</h2>
+              <p>Results from this execution only. Final counts remain here after it finishes. Failed includes errors.</p>
+            </div>
+          </div>
+          <dl className="execution-run-summary" aria-label="Run summary">
+            {Object.entries(runCounts).map(([label, count]) => (
+              <div key={label} className={`execution-stat execution-stat-${label.toLowerCase().replaceAll(" ", "-")}`}>
+                <dt>{label}{label === "Running" || label === "Cancelled" ? " runs" : label === "Total tests" ? "" : " tests"}</dt>
+                <dd>{history.isPending ? "?" : count}</dd>
+              </div>
+            ))}
+          </dl>
+          {history.error && <ErrorState error={history.error} />}
+        </Card>
+      <div className="stack execution-content">
+        <Card className="execution-controls">
           <div className="card-heading">
             <div className="heading-icon">
               <Play size={20} />
@@ -512,7 +546,7 @@ export default function Execution({
               ) : flowGroups.length === 0 ? (
                 <p className="muted">This suite has no scripts yet.</p>
               ) : (
-                <ul className="automation-cases flow-picker">
+                <ul className="automation-cases flow-picker" aria-label="Test cases">
                   {flowGroups.map((group) => {
                     const runnable = group.items.filter((script) => script.runnable);
                     const runnableIds = runnable.map((script) => script.scriptId);
@@ -524,6 +558,7 @@ export default function Execution({
                           <button
                             type="button"
                             className="flow-toggle"
+                            aria-label={`${open ? "Collapse" : "Expand"} ${group.flow}`}
                             aria-expanded={open}
                             onClick={() =>
                               setClosedFlows((current) => {
@@ -680,79 +715,7 @@ export default function Execution({
           );
         })()}
       </div>
-      <aside>
-        <Card className="guide-card">
-          <div className="eyebrow">DETERMINISTIC</div>
-          <h3>No LLM on this path</h3>
-          <p>
-            Status is expected versus actual from Playwright. After a run,
-            download video or trace to replay the browser session step by step.
-            Console and network logs show what the page did.
-          </p>
-        </Card>
-        <Card>
-          <div className="card-heading">
-            <div>
-              <h2>Earlier runs</h2>
-            </div>
-          </div>
-          {(history.data?.runs.length ?? 0) === 0 ? (
-            <p className="muted">No suite has been executed for this project yet.</p>
-          ) : (
-            <ul className="automation-history">
-              <li>
-                <button
-                  type="button"
-                  aria-current={
-                    resultsMode === "latest" && (!pinnedId || pinnedId === latestRunId)
-                      ? "true"
-                      : undefined
-                  }
-                  onClick={() => {
-                    setPinnedId(null);
-                    setResultsMode("latest");
-                  }}
-                >
-                  <span>Latest run</span>
-                  <small>Only the cases executed most recently</small>
-                </button>
-                <button
-                  type="button"
-                  aria-current={!pinnedId && resultsMode === "all" ? "true" : undefined}
-                  onClick={() => {
-                    setPinnedId(null);
-                    setResultsMode("all");
-                  }}
-                >
-                  <span>All cases so far</span>
-                  <small>Login and later flows stay together</small>
-                </button>
-              </li>
-              {history.data?.runs.map((item) => (
-                <li key={item.id}>
-                  <button
-                    type="button"
-                    aria-current={pinnedId === item.id ? "true" : undefined}
-                    onClick={() => {
-                      setPinnedId(item.id);
-                      setResultsMode("latest");
-                    }}
-                  >
-                    <span>{item.status}</span>
-                    <small>
-                      {(Number(item.summary.passed) || 0) +
-                        (Number(item.summary.failed) || 0) +
-                        (Number(item.summary.skipped) || 0) +
-                        (Number(item.summary.error) || 0) || item.result_count}{" "}
-                      results
-                    </small>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </Card>
-      </aside>
+
     </div>
   );
 }

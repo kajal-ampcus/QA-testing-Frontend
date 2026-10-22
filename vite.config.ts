@@ -6,6 +6,10 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [react()],
     server: {
+      watch:
+        env.VITE_USE_POLLING === "true"
+          ? { usePolling: true, interval: 500 }
+          : undefined,
       proxy: {
         "/live": {
           target: env.LIVE_VIEW_PROXY_TARGET || "http://127.0.0.1:6080",

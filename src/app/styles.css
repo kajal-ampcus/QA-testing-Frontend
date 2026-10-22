@@ -4341,6 +4341,101 @@ select,
   text-transform: uppercase;
   color: #7d8b76;
 }
+.execution-page {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+.execution-page .card {
+  min-width: 0;
+  padding: 20px;
+}
+.execution-page .card-heading {
+  margin-bottom: 12px;
+}
+.execution-page .card-heading p {
+  margin-top: 4px;
+}
+.execution-content {
+  min-width: 0;
+  gap: 16px;
+}
+.execution-run-summary {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0;
+}
+.execution-stat {
+  display: block;
+  min-width: 0;
+  padding: 10px 14px;
+  border: 1px solid #e3e9df;
+  border-radius: 10px;
+  background: #f7f9f5;
+}
+.execution-stat dt {
+  font-size: 12px;
+  color: #5d6d63;
+}
+.execution-stat dd {
+  margin: 4px 0 0;
+  font-size: 24px;
+  line-height: 1.2;
+  font-weight: 650;
+}
+.execution-stat-passed dd { color: #277456; }
+.execution-stat-failed dd { color: #b33c35; }
+.execution-stat-running dd { color: #386b9d; }
+.execution-stat-cancelled dd { color: #80603b; }
+.execution-stat-skipped dd { color: #6b7380; }
+.execution-controls .field {
+  margin-top: 10px;
+}
+.execution-controls .flow-picker {
+  max-height: 440px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  margin-top: 12px;
+  padding-right: 8px;
+}
+.execution-controls .flow-group > ul {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 24px;
+}
+.execution-controls .flow-group > ul > li {
+  min-width: 0;
+  padding: 5px 0;
+}
+.execution-controls .flow-group label span {
+  overflow-wrap: anywhere;
+}
+.execution-controls .actions {
+  margin-top: 14px;
+  gap: 8px;
+}
+.execution-page .source-preview {
+  min-height: 0;
+  max-height: 240px;
+}
+@media (max-width: 1000px) {
+  .execution-run-summary {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .execution-controls .flow-group > ul {
+    grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 600px) {
+  .execution-page .card { padding: 14px; }
+  .execution-run-summary { gap: 8px; }
+  .execution-stat { padding: 10px; }
+  .execution-stat dd { font-size: 21px; }
+  .execution-controls .flow-picker { max-height: 360px; }
+  .execution-controls .flow-group > ul { padding-left: 16px; }
+}
 .execution-destructive {
   display: flex;
   gap: 8px;
