@@ -423,11 +423,7 @@ export const api = {
   bulkReviewTests: (
     projectId: string,
     body: { decided_by: string; test_case_ids: string[] },
-  ) =>
-    request<BulkReviewResult>(
-      `/test-cases/projects/${projectId}/bulk-review`,
-      body,
-    ),
+  ) => approveTestBatches(projectId, body),
 
   deleteTest: (testCaseId: string) =>
     request<void>(`/test-cases/${testCaseId}`, undefined, undefined, "DELETE"),
@@ -634,3 +630,29 @@ export const api = {
     URL.revokeObjectURL(url);
   },
 };
+
+
+// Keep each request within the API limit while approving the entire selection.
+async function approveTestBatches(
+  projectId: string,
+  body: { decided_by: string; test_case_ids: string[] },
+): Promise<BulkReviewResult> {
+  const ids = [...new Set(body.test_case_ids)];
+  if (!ids.length) throw new Error("Select at least one test case awaiting approval.");
+  const total: BulkReviewResult = { approved: 0, skipped: 0, failed: [], test_cases: [] };
+  for (let offset = 0; offset < ids.length; offset += 200) {
+    try {
+      const result = await request<BulkReviewResult>(
+        `/test-cases/projects/${projectId}/bulk-review`,
+        { ...body, test_case_ids: ids.slice(offset, offset + 200) },
+      );
+      total.approved += result.approved;
+      total.skipped += result.skipped;
+      total.failed.push(...result.failed);
+      total.test_cases.push(...result.test_cases);
+    } catch (error) {
+      throw new Error(`${total.approved} cases approved before the request failed. Refresh and retry the remaining cases. ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+  return total;
+}

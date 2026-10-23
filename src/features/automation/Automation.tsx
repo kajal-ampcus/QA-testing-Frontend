@@ -147,6 +147,8 @@ function FlowCheck({
   onChange,
   label,
   detail,
+  expanded,
+  onToggle,
 }: {
   checked: boolean;
   partial: boolean;
@@ -154,25 +156,29 @@ function FlowCheck({
   onChange: () => void;
   label: string;
   detail: string;
+  expanded: boolean;
+  onToggle: () => void;
 }) {
   const ref = useRef<HTMLInputElement>(null);
   useEffect(() => {
     if (ref.current) ref.current.indeterminate = partial && !checked;
   }, [partial, checked]);
   return (
-    <label className="flow-head">
+    <div className="automation-flow-header">
       <input
         ref={ref}
+        aria-label={`Select all cases in ${label}`}
         type="checkbox"
         checked={checked}
         disabled={disabled}
         onChange={onChange}
       />
-      <span>
+      <button type="button" className="automation-section-toggle" aria-expanded={expanded} onClick={onToggle}>
+        <ChevronRight size={16} className={expanded ? "open" : ""} />
         <strong>{label}</strong>
-        <small>{detail}</small>
-      </span>
-    </label>
+        <span>{detail}</span>
+      </button>
+    </div>
   );
 }
 
@@ -208,6 +214,7 @@ export default function Automation({
   const blockedHere = rows.filter((row) => row.reason);
 
   const [selected, setSelected] = useState<string[]>([]);
+  const [expandedFlows, setExpandedFlows] = useState<Set<string>>(new Set());
 
   const [file, setFile] = useState<string>("");
   const [openedId, setOpenedId] = useState<string | null>(null);
@@ -312,6 +319,12 @@ export default function Automation({
       ),
     [eligible, map, inSuite],
   );
+  const allFlowsExpanded = flowGroups.length > 0 && flowGroups.every((group) => expandedFlows.has(group.flow));
+  const toggleExpandedFlow = (flow: string) => setExpandedFlows((current) => {
+    const next = new Set(current);
+    if (next.has(flow)) next.delete(flow); else next.add(flow);
+    return next;
+  });
   const toWrite = selected.filter((id) => !inSuite.has(id));
   const suiteExists = (result?.scripts.length ?? 0) > 0;
 
@@ -366,6 +379,13 @@ export default function Automation({
               description="Approve a current test case on the previous step before generating automation."
             />
           ) : (
+            <>
+            <div className="test-flow-controls">
+              <span>{flowGroups.length} sections</span>
+              <button type="button" onClick={() => setExpandedFlows(allFlowsExpanded ? new Set() : new Set(flowGroups.map((group) => group.flow)))}>
+                {allFlowsExpanded ? "Collapse all" : "Expand all"}
+              </button>
+            </div>
             <ul className="automation-cases flow-picker">
               {flowGroups.map((group) => {
                 const freshIds = group.fresh.map(({ test }) => test.id);
@@ -382,13 +402,15 @@ export default function Automation({
                       disabled={freshIds.length === 0}
                       onChange={() => toggleFlow(freshIds, !checked)}
                       label={group.flow}
+                      expanded={expandedFlows.has(group.flow)}
+                      onToggle={() => toggleExpandedFlow(group.flow)}
                       detail={
                         inSuiteCount
                           ? `${caseCount(group.items.length)} · ${inSuiteCount} in suite`
                           : caseCount(group.items.length)
                       }
                     />
-                    <ul>
+                    {expandedFlows.has(group.flow) && <ul>
                       {group.items.map(({ test }) => {
                         const written = inSuite.has(test.id);
                         const recovery = result?.scripts.find((script) => script.test_case_id === test.id)?.recovery;
@@ -432,11 +454,12 @@ export default function Automation({
                           </li>
                         );
                       })}
-                    </ul>
+                    </ul>}
                   </li>
                 );
               })}
             </ul>
+            </>
           )}
 
           {blockedHere.length > 0 && (

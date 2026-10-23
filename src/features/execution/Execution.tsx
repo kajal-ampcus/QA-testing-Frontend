@@ -7,6 +7,7 @@ import {
   Button,
   Card,
   EmptyState,
+  DetailDrawer,
   ErrorState,
   ProgressIndicator,
   StatusBadge,
@@ -868,12 +869,15 @@ function EvidenceLinks({
     url: string;
     text: string;
   } | null>(null);
+  const [evidenceError, setEvidenceError] = useState<unknown>(null);
+  useEffect(() => () => { if (preview?.url) URL.revokeObjectURL(preview.url); }, [preview?.url]);
   const available = CHANNELS.filter((channel) => evidence[channel]);
   if (!available.length) {
     return <span className="muted">None</span>;
   }
   const openPreview = (channel: string) => {
     setBusy(channel);
+    setEvidenceError(null);
     void api
       .fetchEvidence(projectId, runId, resultId, channel)
       .then(async (blob) => {
@@ -885,9 +889,10 @@ function EvidenceLinks({
         setPreview({
           channel,
           url: URL.createObjectURL(blob),
-          text,
+          text: formatEvidenceLog(text),
         });
       })
+      .catch(setEvidenceError)
       .finally(() => setBusy(""));
   };
   return (
@@ -920,7 +925,9 @@ function EvidenceLinks({
           </button>
         </span>
       ))}
+      {!!evidenceError && <ErrorState error={evidenceError} />}
       {preview && (
+        <DetailDrawer title={preview.channel.replace("_", " ")} onClose={() => setPreview(null)}>
         <div className="execution-preview">
           {preview.channel === "screenshot" && (
             <img src={preview.url} alt="Failure screenshot" />
@@ -932,7 +939,19 @@ function EvidenceLinks({
             <pre>{preview.text || "Empty log."}</pre>
           )}
         </div>
+        </DetailDrawer>
       )}
     </div>
   );
+}
+
+
+function formatEvidenceLog(text: string): string {
+  try {
+    const value: unknown = JSON.parse(text);
+    if (Array.isArray(value) && value.length === 0) return "No entries were captured for this test.";
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return text || "No entries were captured for this test.";
+  }
 }

@@ -682,6 +682,8 @@ export default function TestCases({
   const reviewable = activeTests.filter((test) =>
     ["DRAFT", "PENDING_APPROVAL", "REJECTED"].includes(test.status),
   );
+  const reviewableIds = new Set(reviewable.map((test) => test.id));
+  const selectedReviewableIds = [...selectedIds].filter((id) => reviewableIds.has(id));
   const remove = useAction(
     projectId,
     (testCase: TestCase) => api.deleteTest(testCase.id),
@@ -715,11 +717,10 @@ export default function TestCases({
     () =>
       api.bulkReviewTests(projectId, {
         decided_by: bulkReviewer.trim(),
-        test_case_ids: [...selectedIds].filter((id) =>
-          reviewable.some((test) => test.id === id),
-        ),
+        test_case_ids: selectedReviewableIds,
       }),
-    () => {
+    (result) => {
+      setSelectedIds(new Set(result.failed.map((item) => item.test_case_id)));
       setEditingId(undefined);
       setSelected(undefined);
     },
@@ -976,7 +977,7 @@ export default function TestCases({
                   );
                 }}
               />
-              {selectedIds.size} selected
+              {selectedReviewableIds.length} selected
             </label>
             <label>
               Reviewer name
@@ -987,13 +988,17 @@ export default function TestCases({
               />
             </label>
             {bulkReview.error && <ErrorState error={bulkReview.error} />}
+            {bulkReview.data && <div role="status">
+              {bulkReview.data.approved} approved, {bulkReview.data.skipped} already approved.
+              {bulkReview.data.failed.map((item) => <p key={item.test_case_id}>{item.tc_code || item.test_case_id}: {item.error}</p>)}
+            </div>}
             <Button
               type="button"
               busy={bulkReview.isPending}
-              disabled={!bulkReviewer.trim() || selectedIds.size === 0}
+              disabled={!bulkReviewer.trim() || selectedReviewableIds.length === 0}
               onClick={() => bulkReview.mutate()}
             >
-              Approve selected ({selectedIds.size})
+              Approve selected ({selectedReviewableIds.length})
             </Button>
           </div>
         )}
