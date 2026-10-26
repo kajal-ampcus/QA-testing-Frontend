@@ -460,6 +460,7 @@ export interface ExecutionRun {
   environment: string;
   base_url: string | null;
   run_destructive: boolean;
+  watch_browser?: boolean;
   status: string;
   summary: Record<string, number>;
   log?: string | null;

@@ -152,6 +152,7 @@ export default function Execution({
 }) {
   const [generationId, setGenerationId] = useState(generations[0]?.generation_id || "");
   const [runDestructive, setRunDestructive] = useState(false);
+  const [watchBrowser, setWatchBrowser] = useState(false);
   const [jobId, setJobId] = useState("");
   const [openedId, setOpenedId] = useState<string | null>(null);
   const [pinnedId, setPinnedId] = useState<string | null>(null);
@@ -208,6 +209,7 @@ export default function Execution({
     generation: string,
     runDestructiveFlag = false,
     scriptIds: string[] = [],
+    watchBrowserFlag = false,
   ) => {
     const key = `${projectId}:${generation}`;
     if (startingSuites.has(key)) return;
@@ -221,6 +223,7 @@ export default function Execution({
       const data = await api.startExecution(projectId, {
         generation_id: generation,
         run_destructive: runDestructiveFlag,
+        watch_browser: watchBrowserFlag,
         script_ids: scriptIds,
       });
       setJobId(data.job_id);
@@ -535,6 +538,17 @@ export default function Execution({
                   Include approved destructive flows (RUN_DESTRUCTIVE)
                 </label>
               )}
+              <label className="execution-destructive">
+                <input
+                  type="checkbox"
+                  checked={watchBrowser}
+                  onChange={(event) => setWatchBrowser(event.target.checked)}
+                />
+                Watch this run (view-only live browser)
+              </label>
+              {watchBrowser && (
+                <p className="muted">The browser is visible while this run is active. You cannot click or type in it.</p>
+              )}
               {selected?.risk_level === "DESTRUCTIVE" && !canDestroy && (
                 <p className="muted">
                   Destructive scripts stay skipped until a tester approves them.
@@ -640,7 +654,7 @@ export default function Execution({
                   busy={booting || running}
                   disabled={!generationId || projectBusy || picked.length === 0}
                   onClick={() =>
-                    void beginRun(generationId, canDestroy && runDestructive, picked)
+                    void beginRun(generationId, canDestroy && runDestructive, picked, watchBrowser)
                   }
                 >
                   {buttonLabel}
@@ -675,16 +689,19 @@ export default function Execution({
               }
             />
           )}
+          {projectBusy && currentRun?.watch_browser && !showLive && (
+            <p className="muted">Live browser is preparing. Test status will continue here if the stream is unavailable.</p>
+          )}
           {autoError ? <ErrorState error={autoError} /> : null}
           {job.error && <ErrorState error={job.error} />}
           {detail.error && <ErrorState error={detail.error} />}
         </Card>
-        {showLive && (
+          {showLive && currentRun?.watch_browser && (
           <Card>
             <div className="card-heading">
               <div>
                 <h2>Live browser</h2>
-                <p>Chromium for this project, following this run.</p>
+                <p>View-only Chromium stream for this run.</p>
               </div>
             </div>
             <div className="execution-now">
@@ -697,7 +714,7 @@ export default function Execution({
             <iframe
               className="execution-live"
               title="Live browser"
-              src="/live/vnc.html?autoconnect=1&resize=scale&path=live/websockify"
+              src="/live/vnc.html?autoconnect=1&resize=scale&view_only=1&path=live/websockify"
             />
           </Card>
         )}

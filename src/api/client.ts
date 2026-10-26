@@ -549,6 +549,7 @@ export const api = {
     body: {
       generation_id: string;
       run_destructive?: boolean;
+      watch_browser?: boolean;
       script_ids?: string[];
     },
   ) =>
