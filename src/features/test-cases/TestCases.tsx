@@ -500,16 +500,22 @@ export function Generate({
     scope: "all" | "ungenerated",
     areaIds: string[],
     moduleIds: string[],
+    stateCodes: string[],
+    regenerate: boolean,
   ) => void;
   onReview: () => void;
 }) {
+  const [scope, setScope] = useState<"all" | "ungenerated" | "selected">("all");
+  const [stateCodes, setStateCodes] = useState<string[]>([]);
+  const [regenerate, setRegenerate] = useState(false);
   const generatedFingerprints = new Set(
     map.project_test_generation_coverage?.[r.id] ?? [],
   );
   const ungeneratedStates = map.states.filter(
     (state) => !generatedFingerprints.has(state.fingerprint),
   );
-  const hasPreviousGeneration = generatedFingerprints.size > 0;
+  const chosenStates = scope === "all" ? map.states : scope === "ungenerated" ? ungeneratedStates
+    : map.states.filter((state) => stateCodes.includes(state.state_code));
   return (
     <div className="two-column">
       <Card>
@@ -571,22 +577,46 @@ export function Generate({
           />
         )}
         {!!error && <ErrorState error={error} />}
+        <fieldset className="generation-scope" disabled={pending}>
+          <legend>Choose graph states</legend>
+          <label>
+            Generate for
+            <select value={scope} onChange={(event) => setScope(event.target.value as typeof scope)}>
+              <option value="all">Whole graph ({map.states.length} states)</option>
+              <option value="ungenerated">New graph part ({ungeneratedStates.length} states)</option>
+              <option value="selected">Selected states</option>
+            </select>
+          </label>
+          <div className="generation-state-list" role="group" aria-label="Graph states">
+            {map.states.map((state) => (
+              <label key={state.state_code} className="generation-state">
+                <input type="checkbox"
+                  checked={chosenStates.some((item) => item.state_code === state.state_code)}
+                  onChange={(event) => {
+                    const selected = chosenStates.map((item) => item.state_code);
+                    setStateCodes(event.target.checked ? [...selected, state.state_code] : selected.filter((code) => code !== state.state_code));
+                    setScope("selected");
+                  }} />
+                <span><strong>{state.state_code}</strong><small>{state.url_pattern}</small></span>
+                <small>{generatedFingerprints.has(state.fingerprint) ? "Generated" : "New"}</small>
+              </label>
+            ))}
+          </div>
+          <p className="muted">{chosenStates.length} states selected. Uncheck states to generate for a specific section.</p>
+          <label className="generation-replace">
+            <input type="checkbox" checked={regenerate} onChange={(event) => setRegenerate(event.target.checked)} />
+            Replace existing cases for the selected states, including approved cases
+          </label>
+          {regenerate && <p className="notice">Replacement cases start as drafts and need review. Previous cases and their automation are retired when new valid cases are saved; their execution history is retained.</p>}
+        </fieldset>
         <div className="actions">
-          <Button onClick={() => onGenerate("all", [], [])} busy={pending}>
+          <Button disabled={chosenStates.length === 0} busy={pending}
+            onClick={() => onGenerate(scope === "ungenerated" ? "ungenerated" : "all", [], [],
+              scope === "selected" ? stateCodes : [], regenerate)}>
             <Sparkles size={16} />
-            {hasPreviousGeneration
-              ? "Generate for whole graph"
-              : "Generate test cases"}
+            {regenerate ? "Regenerate selected scope" : "Generate test cases"}
           </Button>
-          {hasPreviousGeneration && ungeneratedStates.length > 0 && (
-            <Button
-              variant="secondary"
-              onClick={() => onGenerate("ungenerated", [], [])}
-              busy={pending}
-            >
-              Generate only for new graph part ({ungeneratedStates.length})
-            </Button>
-          )}
+          <Button variant="secondary" onClick={onReview}>Review saved test cases</Button>
         </div>
         {map.status === "PARTIAL" && (
           <div className="notice">
@@ -837,7 +867,7 @@ export default function TestCases({
                 busy={generatingWholeGraph}
               >
                 <Sparkles size={15} />
-                {hasApprovedForCurrentMap ? "Regenerate test cases" : "Generate for whole graph"}
+                Choose states / regenerate
               </Button>
             )}
           </div>
@@ -1273,16 +1303,12 @@ export default function TestCases({
                 Edit in list
               </Button>
             )}
-            {selected.status !== "APPROVED" && (
-              <Button
-                variant="secondary"
-                type="button"
-                busy={remove.isPending}
-                onClick={() => remove.mutate(selected)}
-              >
-                Delete draft
-              </Button>
-            )}
+            <Button variant="secondary" type="button" busy={remove.isPending}
+              onClick={() => {
+                if (window.confirm(`Delete ${selected.tc_code} from active test cases? Its automation will be blocked. Previous execution history will be retained.`)) remove.mutate(selected);
+              }}>
+              Delete test case
+            </Button>
           </div>
         </DetailDrawer>
       )}

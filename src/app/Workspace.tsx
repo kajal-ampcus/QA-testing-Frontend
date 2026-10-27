@@ -178,6 +178,7 @@ export default function Workspace({ id }: { id: string }) {
       areaIds: string[];
       moduleIds: string[];
       branchKeys?: string[];
+      stateCodes?: string[];
       regenerate?: boolean;
     }) =>
       api.generate(
@@ -190,6 +191,7 @@ export default function Workspace({ id }: { id: string }) {
         selection.moduleIds,
         selection.branchKeys,
         selection.regenerate,
+        selection.stateCodes,
       ),
     () => navigateStage(5),
   );
@@ -287,19 +289,11 @@ export default function Workspace({ id }: { id: string }) {
         eyebrow="PROJECT WORKSPACE"
         title={project.data?.name || "Your project"}
         description="One connected journey, from requirement to test confidence."
-        action={
-          project.data?.application_url &&
-          /^https?:\/\//.test(project.data.application_url) ? (
-            <a
-              className="button secondary"
-              href={project.data.application_url}
-              target="_blank"
-              rel="noreferrer"
-            >
-              Open application <ExternalLink size={14} />
-            </a>
-          ) : undefined
-        }
+        action={project.data ? (
+          <div className="workspace-header-actions">
+            {project.data.application_url && /^https?:\/\//.test(project.data.application_url) && <a className="button secondary" href={project.data.application_url} target="_blank" rel="noreferrer">Open application <ExternalLink size={14} /></a>}
+          </div>
+        ) : undefined}
       />
       {loading ? (
         <LoadingState />
@@ -445,14 +439,15 @@ export default function Workspace({ id }: { id: string }) {
                 map.data &&
                 ["COMPLETE", "PARTIAL"].includes(map.data.status) && (
                   <Generate
+                    key={`${r.id}:${map.data.id}`}
                     requirement={r}
                     map={map.data}
                     pending={generation.isPending}
                     savedCount={currentTests.length}
                     error={generation.error}
                     result={generation.data}
-                    onGenerate={(scope, areaIds, moduleIds) =>
-                      generation.mutate({ scope, areaIds, moduleIds })
+                    onGenerate={(scope, areaIds, moduleIds, stateCodes, regenerate) =>
+                      generation.mutate({ scope, areaIds, moduleIds, stateCodes, regenerate })
                     }
                     onReview={() => navigateStage(5)}
                   />
@@ -471,9 +466,7 @@ export default function Workspace({ id }: { id: string }) {
                   }
                   generatingWholeGraph={generation.isPending}
                   wholeGraphError={generation.error}
-                  onGenerateWholeGraph={(regenerate) =>
-                    generation.mutate({ scope: "all", areaIds: [], moduleIds: [], regenerate })
-                  }
+                  onGenerateWholeGraph={() => navigateStage(4)}
                   approvals={approvals.data || []}
                   requirement={r}
                   onNext={() => navigateStage(6)}

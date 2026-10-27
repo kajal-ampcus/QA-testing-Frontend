@@ -17,6 +17,7 @@
 
 import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useNavigate } from "react-router-dom";
 import {
   KeyRound,
   Plus,
@@ -31,10 +32,13 @@ import {
   UserCircle,
   AlertCircle,
   Pencil,
+  Upload,
+  Download,
+  X,
 } from "lucide-react";
 import { api, ApiError } from "../../api/client";
 import { Button, ErrorState } from "../../components/ui";
-import type { ProjectAccount } from "../../types/api";
+import type { FormTestFixture, ImportSummary, ProjectAccount } from "../../types/api";
 
 /* ── helpers ──────────────────────────────────────────────────── */
 
@@ -69,16 +73,19 @@ function AccountForm({
   isFirstAccount,
 }: AccountFormProps) {
   const client = useQueryClient();
-  const [roleName, setRoleName] = useState(existing?.label ?? "");
+  const [labelName, setLabelName] = useState(existing?.label ?? "");
+  const [roleName, setRoleName] = useState(existing?.role ?? "");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [loginUrl, setLoginUrl] = useState(existing?.login_route ?? "");
+  const [testType, setTestType] = useState<"positive" | "negative" | "edge">(existing?.test_type ?? "positive");
+  const [tags, setTags] = useState((existing?.tags ?? []).join(", "));
   const [showPw, setShowPw] = useState(false);
   const [isDefault, setIsDefault] = useState(
     existing?.is_default ?? isFirstAccount,
   );
   const [showSelectors, setShowSelectors] = useState(false);
   const [selectors, setSelectors] = useState({
-    login_url: "",
     username_selector: "",
     password_selector: "",
     submit_selector: "",
@@ -87,9 +94,12 @@ function AccountForm({
   const save = useMutation({
     mutationFn: () => {
       const base = {
-        role_name: roleName.trim() || "Default",
+        label: labelName.trim(),
+        role_name: roleName.trim(),
         is_default: isDefault,
-        ...(selectors.login_url ? { login_url: selectors.login_url } : {}),
+        login_url: loginUrl.trim(),
+        test_type: testType,
+        tags: tags.split(",").map((tag) => tag.trim()).filter(Boolean),
         ...(selectors.username_selector
           ? { username_selector: selectors.username_selector }
           : {}),
@@ -130,17 +140,29 @@ function AccountForm({
         save.mutate();
       }}
     >
-      {/* Role name */}
       <label>
-        Role name
+        Credential label
+        <input
+          required
+          value={labelName}
+          onChange={(e) => setLabelName(e.target.value)}
+          placeholder="e.g. Admin valid account"
+          maxLength={120}
+          autoFocus={!isEdit}
+        />
+        <span className="field-hint">A name to recognize this saved login.</span>
+      </label>
+
+      {/* Application role */}
+      <label>
+        Application role
         <div style={{ position: "relative" }}>
           <input
+            required
             value={roleName}
             onChange={(e) => setRoleName(e.target.value)}
             placeholder="e.g. Admin, Customer, Manager"
-
-            maxLength={60}
-            autoFocus={!isEdit}
+            maxLength={120}
             list="role-suggestions"
           />
           <datalist id="role-suggestions">
@@ -150,8 +172,18 @@ function AccountForm({
           </datalist>
         </div>
         <span className="field-hint">
-          Used to label this account in discovery runs and generated tests.
+          The role this account represents during discovery.
         </span>
+      </label>
+
+      <label>
+        Login page URL
+        <input
+          type="url"
+          value={loginUrl}
+          onChange={(e) => setLoginUrl(e.target.value)}
+          placeholder="https://example.com/login"
+        />
       </label>
 
       {/* Username */}
@@ -162,8 +194,26 @@ function AccountForm({
           value={username}
           onChange={(e) => setUsername(e.target.value)}
           placeholder="test@example.com"
-          required
+          required={!isEdit}
           autoComplete="off"
+        />
+      </label>
+
+      <label>
+        Scenario type
+        <select value={testType} onChange={(e) => setTestType(e.target.value as typeof testType)}>
+          <option value="positive">Positive — valid login</option>
+          <option value="negative">Negative — invalid login</option>
+          <option value="edge">Edge case</option>
+        </select>
+      </label>
+
+      <label>
+        Tags
+        <input
+          value={tags}
+          onChange={(e) => setTags(e.target.value)}
+          placeholder="admin, smoke (comma separated)"
         />
       </label>
 
@@ -221,7 +271,6 @@ function AccountForm({
         <div className="form-grid" style={{ marginTop: "16px" }}>
           {(
             [
-              ["login_url", "Login page URL", "https://…/login"],
               ["username_selector", "Username field label", "email"],
               ["password_selector", "Password field label", "password"],
               ["submit_selector", "Submit button label", "log in"],
@@ -275,6 +324,7 @@ function AccountRow({
 }) {
   const client = useQueryClient();
   const [editing, setEditing] = useState(promptUpdate);
+  const [detailsOpen, setDetailsOpen] = useState(false);
   useEffect(() => {
     if (promptUpdate) setEditing(true);
   }, [promptUpdate]);
@@ -401,6 +451,15 @@ function AccountRow({
           style={{ display: "flex", gap: "6px", alignItems: "center" }}
           onClick={(e) => e.stopPropagation()}
         >
+          <button
+            type="button"
+            className="icon-button"
+            title={detailsOpen ? "Hide account details" : "View account details"}
+            aria-expanded={detailsOpen}
+            onClick={() => setDetailsOpen((value) => !value)}
+          >
+            <Eye size={15} />
+          </button>
           {!account.is_default && (
             <button
               className="icon-button"
@@ -439,6 +498,16 @@ function AccountRow({
         </div>
       </div>
 
+      {detailsOpen && (
+        <div className="account-detail-panel" onClick={(event) => event.stopPropagation()}>
+          <span><strong>Role:</strong> {account.role}</span>
+          <span><strong>Scenario:</strong> {account.test_type || "positive"}</span>
+          {account.login_route && <span><strong>Login page:</strong> {account.login_route}</span>}
+          {!!account.tags?.length && <span><strong>Tags:</strong> {account.tags.join(", ")}</span>}
+          <small>Username and password are encrypted and never shown here.</small>
+        </div>
+      )}
+
       {del.error && (
         <div style={{ marginTop: "8px" }} onClick={(e) => e.stopPropagation()}>
           <ErrorState error={del.error} />
@@ -471,6 +540,7 @@ export function ApplicationAccess({
   promptUpdate?: boolean;
 }) {
   const client = useQueryClient();
+  const navigate = useNavigate();
   const accounts = useQuery({
     queryKey: ["accounts", projectId],
     queryFn: () => api.accounts(projectId),
@@ -478,6 +548,28 @@ export function ApplicationAccess({
 
   const [adding, setAdding] = useState(false);
   const [open, setOpen] = useState(true);
+  const [importResult, setImportResult] = useState<ImportSummary | null>(null);
+  const [importError, setImportError] = useState("");
+  const [templateBusy, setTemplateBusy] = useState(false);
+  const [showFormData, setShowFormData] = useState(false);
+  const formData = useQuery({
+    queryKey: ["project-data", projectId, "fixtures"],
+    queryFn: () => api.formTestData(projectId),
+    enabled: showFormData,
+  });
+  const importAccounts = useMutation({
+    mutationFn: (file: File) => api.importAccounts(projectId, file),
+    onSuccess: async (result) => {
+      setImportError("");
+      setImportResult(result);
+      await Promise.all([
+        client.invalidateQueries({ queryKey: ["accounts", projectId] }),
+        client.invalidateQueries({ queryKey: ["projects"] }),
+        client.invalidateQueries({ queryKey: ["workspace", projectId] }),
+      ]);
+    },
+    onError: (error) => setImportError(error instanceof Error ? error.message : "Could not import credentials."),
+  });
 
   const list: ProjectAccount[] = accounts.data ?? [];
   const hasAccounts = accounts.isSuccess ? list.length > 0 : savedBadge;
@@ -534,9 +626,9 @@ export function ApplicationAccess({
             className="muted"
             style={{ fontSize: "12px", marginBottom: "16px" }}
           >
-            Add a test account for each role you want to discover. Select which
-            account to use before starting discovery — its role will be recorded
-            on the application map and generated test cases.
+            Add accounts here or import them from Excel. If this application
+            requires login, choose a saved account for discovery; public sites
+            can be explored without credentials.
           </p>
 
           {/* Error loading accounts */}
@@ -550,6 +642,92 @@ export function ApplicationAccess({
                 retry={() => accounts.refetch()}
               />
             )}
+
+          <div className="credential-import-actions">
+            <label className="button secondary upload-button">
+              <Upload size={15} /> Import Excel
+              <input
+                type="file"
+                accept=".xlsx"
+                disabled={running || importAccounts.isPending}
+                onChange={(event) => {
+                  const file = event.currentTarget.files?.[0];
+                  if (file) importAccounts.mutate(file);
+                  event.currentTarget.value = "";
+                }}
+              />
+            </label>
+            <Button
+              variant="secondary"
+              disabled={running || templateBusy}
+              onClick={async () => {
+                setTemplateBusy(true);
+                try {
+                  const blob = await api.downloadCredentialTemplate(projectId);
+                  const href = URL.createObjectURL(blob);
+                  const link = document.createElement("a");
+                  link.href = href;
+                  link.download = "login-credentials-template.xlsx";
+                  link.click();
+                  URL.revokeObjectURL(href);
+                } catch (error) {
+                  setImportError(error instanceof Error ? error.message : "Could not download the template.");
+                } finally {
+                  setTemplateBusy(false);
+                }
+              }}
+            >
+              <Download size={15} /> Sample template
+            </Button>
+          </div>
+          {importAccounts.isPending && <p className="field-hint" role="status">Importing login credentials…</p>}
+          {importError && <p className="data-error" role="alert">{importError}</p>}
+          {importResult && (
+            <div className="import-summary" role="status">
+              <button className="icon-button" aria-label="Dismiss import summary" onClick={() => setImportResult(null)}><X size={14} /></button>
+              <strong>Imported {importResult.imported_count} account{importResult.imported_count === 1 ? "" : "s"}</strong>
+              <span>{importResult.error_count} row errors</span>
+              {!!importResult.errors.length && <ul>{importResult.errors.map((item) => <li key={`${item.row}-${item.error}`}>Row {item.row}: {item.error}</li>)}</ul>}
+            </div>
+          )}
+
+          <section className="saved-form-data">
+            <button
+              type="button"
+              className="saved-form-data-toggle"
+              aria-expanded={showFormData}
+              onClick={() => setShowFormData((value) => !value)}
+            >
+              <span>Saved form test data</span>
+              <span className="badge">{formData.data?.length ?? "View"}</span>
+              {showFormData ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+            </button>
+            {showFormData && (
+              <div className="saved-form-data-content">
+                {formData.isPending && <p className="field-hint">Loading saved form data…</p>}
+                {formData.error && <ErrorState error={formData.error} retry={() => void formData.refetch()} />}
+                {formData.isSuccess && formData.data.length === 0 && <p className="field-hint">No form test data has been added for this project yet.</p>}
+                {formData.data?.map((fixture: FormTestFixture) => (
+                  <details className="saved-form-fixture" key={fixture.id}>
+                    <summary>
+                      <strong>{fixture.label}</strong>
+                      <span>{fixture.form_group} · {fixture.test_type}</span>
+                    </summary>
+                    <dl>
+                      <dt>Field values</dt>
+                      <dd><pre>{JSON.stringify(fixture.test_data, null, 2)}</pre></dd>
+                      {fixture.expected_result && <><dt>Expected result</dt><dd>{fixture.expected_result}</dd></>}
+                      {fixture.test_case_id && <><dt>Assigned test case</dt><dd>{fixture.test_case_id}</dd></>}
+                      {!!fixture.tags.length && <><dt>Tags</dt><dd>{fixture.tags.join(", ")}</dd></>}
+                    </dl>
+                  </details>
+                ))}
+                <Button variant="secondary" onClick={() => navigate(`/projects/${projectId}/data`)}>
+                  View or manage form test data
+                </Button>
+              </div>
+            )}
+          </section>
 
           {/* Account list */}
           {list.length > 0 && (
@@ -592,10 +770,10 @@ export function ApplicationAccess({
                 style={{ flexShrink: 0, marginTop: "2px" }}
               />
               <div>
-                <strong>No test accounts yet</strong>
+                <strong>No saved login account</strong>
                 <p style={{ margin: "4px 0 0", fontSize: "12px" }}>
-                  Add at least one account so the discovery crawler can log in
-                  and explore authenticated pages.
+                  You can add one now, or continue without credentials for a
+                  public application. Login details can also be requested during discovery.
                 </p>
               </div>
             </div>

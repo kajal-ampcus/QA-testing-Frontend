@@ -1,6 +1,8 @@
 import type {
   Project,
   ProjectAccount,
+  FormTestFixture,
+  ImportSummary,
   Requirement,
   Approval,
   AppMap,
@@ -58,6 +60,24 @@ async function request<T>(
           ? detail.map((d: { msg: string }) => d.msg).join("; ")
           : `Request failed (${response.status}). Please try again.`,
     );
+  }
+  return data as T;
+}
+
+async function upload<T>(path: string, file: File): Promise<T> {
+  const form = new FormData();
+  form.append("file", file);
+  const headers: Record<string, string> = {};
+  const apiKey = import.meta.env.VITE_API_KEY;
+  if (apiKey) headers["X-API-Key"] = apiKey;
+  const response = await fetch(
+    `${(import.meta.env.VITE_API_BASE_URL || "/api/v1").replace(/\/$/, "")}${path}`,
+    { method: "POST", headers: Object.keys(headers).length ? headers : undefined, body: form },
+  );
+  const data = await response.json().catch(() => null);
+  if (!response.ok) {
+    const detail = data?.detail;
+    throw new ApiError(response.status, typeof detail === "string" ? detail : detail?.message || `Upload failed (${response.status}).`);
   }
   return data as T;
 }
@@ -257,6 +277,7 @@ export const api = {
   saveAccount: (
     projectId: string,
     body: {
+      label?: string;
       role_name: string;
       username: string;
       password: string;
@@ -265,10 +286,12 @@ export const api = {
       username_selector?: string;
       password_selector?: string;
       submit_selector?: string;
+      test_type?: "positive" | "negative" | "edge";
+      tags?: string[];
     },
   ) =>
     request<ProjectAccount>(`/projects/${projectId}/credentials`, {
-      label: body.role_name,
+      label: body.label || body.role_name,
       role: body.role_name,
       username: body.username,
       password: body.password,
@@ -283,6 +306,8 @@ export const api = {
       ...(body.submit_selector
         ? { submit_selector: body.submit_selector }
         : {}),
+      test_type: body.test_type || "positive",
+      tags: body.tags || [],
     }),
 
   /** Legacy single-account compat — wraps saveAccount with role=Default */
@@ -314,6 +339,7 @@ export const api = {
     projectId: string,
     credential_ref: string,
     body: {
+      label?: string;
       role_name: string;
       username?: string;
       password?: string;
@@ -322,12 +348,14 @@ export const api = {
       username_selector?: string;
       password_selector?: string;
       submit_selector?: string;
+      test_type?: "positive" | "negative" | "edge";
+      tags?: string[];
     },
   ) =>
     request<ProjectAccount>(
       `/projects/${projectId}/credentials/${encodeURIComponent(credential_ref)}/revisions`,
       {
-        label: body.role_name,
+        label: body.label || body.role_name,
         role: body.role_name,
         set_as_project_default: body.is_default,
         ...(body.username ? { username: body.username } : {}),
@@ -342,6 +370,8 @@ export const api = {
         ...(body.submit_selector
           ? { submit_selector: body.submit_selector }
           : {}),
+        ...(body.test_type ? { test_type: body.test_type } : {}),
+        ...(body.tags ? { tags: body.tags } : {}),
       },
     ),
 
@@ -360,10 +390,35 @@ export const api = {
       "DELETE",
     ),
 
+  importAccounts: (projectId: string, file: File) =>
+    upload<ImportSummary>(`/projects/${projectId}/credentials/import`, file),
+
+  downloadCredentialTemplate: async (projectId: string) => {
+    const headers: Record<string, string> = {};
+    const apiKey = import.meta.env.VITE_API_KEY;
+    if (apiKey) headers["X-API-Key"] = apiKey;
+    const response = await fetch(
+      `${(import.meta.env.VITE_API_BASE_URL || "/api/v1").replace(/\/$/, "")}/projects/${projectId}/credentials/template`,
+      { headers },
+    );
+    if (!response.ok) throw new ApiError(response.status, "Could not download the credential template.");
+    return response.blob();
+  },
+
+  formTestData: (projectId: string, signal?: AbortSignal) =>
+    request<FormTestFixture[]>(`/projects/${projectId}/form-test-data`, undefined, signal),
+  createFormTestData: (projectId: string, body: Omit<FormTestFixture, "id" | "project_id" | "active" | "created_at">) =>
+    request<FormTestFixture>(`/projects/${projectId}/form-test-data`, body),
+  updateFormTestData: (projectId: string, id: string, body: Partial<Omit<FormTestFixture, "id" | "project_id" | "active" | "created_at">>) =>
+    request<FormTestFixture>(`/projects/${projectId}/form-test-data/${id}`, body, undefined, "PATCH"),
+  deactivateFormTestData: (projectId: string, id: string) =>
+    request<void>(`/projects/${projectId}/form-test-data/${id}`, undefined, undefined, "DELETE"),
+  importFormTestData: (projectId: string, file: File) =>
+    upload<ImportSummary>(`/projects/${projectId}/form-test-data/import`, file),
+
   // ── Test cases ────────────────────────────────────────────
   tests: (id: string, signal?: AbortSignal) =>
     request<TestCase[]>(`/test-cases/projects/${id}`, undefined, signal),
-
   generate: (
     id: string,
     requirement_id: string,
@@ -374,12 +429,14 @@ export const api = {
     selected_module_ids: string[] = [],
     selected_branch_keys: string[] = [],
     regenerate = false,
+    selected_state_codes: string[] = [],
   ) =>
     request<Generation>(`/test-cases/projects/${id}/generate`, {
       requirement_id,
       application_map_id,
       ...(target_categories ? { target_categories } : {}),
       generation_scope,
+      selected_state_codes,
       selected_area_ids,
       selected_module_ids,
       ...(selected_branch_keys.length ? { selected_branch_keys } : {}),

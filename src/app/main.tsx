@@ -13,6 +13,7 @@ import { LoadingState, ErrorState } from "../components/ui";
 import "./styles.css";
 const Projects = lazy(() => import("../features/projects/Projects"));
 const Workspace = lazy(() => import("./Workspace"));
+const ProjectData = lazy(() => import("../features/project-data/ProjectData"));
 const client = new QueryClient({
   defaultOptions: {
     queries: {
@@ -46,6 +47,10 @@ function ProjectRoute() {
   const { id } = useParams();
   return <Workspace key={id} id={id!} />;
 }
+function ProjectDataRoute() {
+  const { id } = useParams();
+  return <ProjectData key={id} projectId={id!} />;
+}
 createRoot(document.getElementById("root")!).render(
   <ErrorBoundary>
     <QueryClientProvider client={client}>
@@ -54,6 +59,7 @@ createRoot(document.getElementById("root")!).render(
           <Routes>
             <Route path="/" element={<Projects />} />
             <Route path="/projects/:id" element={<ProjectRoute />} />
+            <Route path="/projects/:id/data" element={<ProjectDataRoute />} />
             <Route
               path="*"
               element={

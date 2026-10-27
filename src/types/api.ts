@@ -25,6 +25,31 @@ export interface ProjectAccount {
   is_default: boolean;
   /** ISO timestamp */
   created_at: string;
+  test_type?: "positive" | "negative" | "edge";
+  credential_type?: "login";
+  tags?: string[];
+}
+
+export type ScenarioType = "positive" | "negative" | "validation" | "edge";
+
+export interface FormTestFixture {
+  id: string;
+  project_id: string;
+  test_case_id: string | null;
+  label: string;
+  form_group: string;
+  test_type: ScenarioType;
+  test_data: Record<string, unknown>;
+  expected_result: string | null;
+  tags: string[];
+  active: boolean;
+  created_at: string;
+}
+
+export interface ImportSummary {
+  imported_count: number;
+  error_count: number;
+  errors: { row: number; error: string }[];
 }
 
 export interface Requirement {
@@ -261,6 +286,7 @@ export interface TestCase {
   application_map_id: string;
   status: string;
   current_version: number;
+  credential_ref?: string | null;
   /** Which role this test case was generated for */
   role_name?: string | null;
   current: {
