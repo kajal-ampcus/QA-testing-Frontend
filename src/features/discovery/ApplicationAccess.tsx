@@ -739,7 +739,6 @@ export function ApplicationAccess({
                 marginBottom: "16px",
               }}
             >
-              <Button disabled={running} onClick={() => onSelectRef(null)}>Ask for login during discovery</Button>
               {list.map((account) => (
                 <div key={account.credential_ref}>
                 {account.login_group && <p className="field-hint">Login group: {account.role} · {account.login_route}</p>}
