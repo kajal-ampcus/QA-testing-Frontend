@@ -20,22 +20,27 @@ export function isRunnableReview(status: string): boolean {
 
 export function flowNameFromUrl(urlPattern: string | null | undefined): string {
   const segments = pathSegments(urlPattern);
-  if (segments.length === 0) return "Other";
+  if (segments.length === 0) return urlPattern?.trim() ? "Homepage" : "Other";
   if (segments[0].length === 2 && /^[a-z]{2}$/i.test(segments[0])) segments.shift();
   const segment = segments.at(-1);
-  if (!segment) return "Other";
+  if (!segment) return "Homepage";
   const slug = segment.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
   return NAMED_FLOWS[slug] ?? titleCase(segment);
 }
 
 export function flowNameForCase(
-  test: Pick<TestCase, "current"> | undefined,
+  test: (Pick<TestCase, "current"> & Partial<Pick<TestCase, "application_map_id">>) | undefined,
   map?: AppMap | null,
 ): string {
   const stateCode = firstStateCode(test);
-  if (!stateCode || !map) return "Other";
-  const state = map.states.find((item) => item.state_code === stateCode);
-  return flowNameFromUrl(state?.url_pattern);
+  // State codes are local to a map. Reusing the latest map for an older case
+  // can label a login case as another page, or lose it under Other.
+  const sameMap = map && (!test?.application_map_id || test.application_map_id === map.id);
+  const state = sameMap && stateCode ? map.states.find((item) => item.state_code === stateCode) : undefined;
+  if (state) return flowNameFromUrl(state.url_pattern);
+  const explicitStart = test?.current.preconditions?.find((item) => /^Browser is on\s+\S+/i.test(item));
+  const url = explicitStart?.replace(/^Browser is on\s+/i, "").trim();
+  return flowNameFromUrl(url);
 }
 
 export function compareFlows(left: string, right: string): number {

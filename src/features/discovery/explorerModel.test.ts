@@ -16,6 +16,21 @@ test("failed entry pages can be selected without changing the saved job", () => 
   assert.deepEqual(entry.path, []);
 });
 
+test("completed entry remains visible while observed login choices await selection", () => {
+  const entry = { key: "root", status: "completed", path: [] };
+  const roles = explorerRoles({
+    configuration: { credential_ref: null, mode: "guided" },
+    jobs: [entry],
+    input_requests: [{ id: "choose-login", kind: "login_choice", status: "pending", fields: [],
+      choices: [{ id: "member", label: "Member" }, { id: "staff", label: "Staff" }] }],
+  } as unknown as DiscoveryCheckpoint, []);
+  const root = roles.find((role) => role.id === "public")?.paths[0];
+  assert.equal(root?.status, "completed");
+  assert.equal(root?.path[0].name, "Entry page");
+  assert.deepEqual(roles.filter((role) => role.choice).map((role) => role.label), ["Member", "Staff"]);
+  assert.deepEqual(entry.path, []);
+});
+
 const job = (key: string, status = "available") => ({
   key,
   status,

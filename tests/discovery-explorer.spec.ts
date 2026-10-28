@@ -17,6 +17,30 @@ test.beforeEach(async ({ page }) => {
   );
 });
 
+test("waiting for a login shows the saved entry and resumes the explicitly chosen login", async ({ page }) => {
+  let selected: Record<string, unknown> | undefined;
+  let resumed: Record<string, unknown> | undefined;
+  await page.route("**/api/v1/application-maps/map1/input-requests/choose-login", (route) => {
+    selected = route.request().postDataJSON();
+    return route.fulfill({ json: { id: "choose-login", status: "applied", selected_branches: ["member-form"], credential_ref: null } });
+  });
+  await page.route("**/api/v1/application-maps/projects/p1/discover", (route) => {
+    resumed = route.request().postDataJSON();
+    return route.fulfill({ json: { job_id: "login-form-job" } });
+  });
+  await page.goto("/tests/discovery-explorer-harness.html?login-choice");
+  const paths = page.getByRole("region", { name: "Saved discovery paths" });
+  await expect(paths.getByRole("checkbox", { name: /^Entry page/ })).toBeVisible();
+  await expect(paths.getByText("1 / 1 complete")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Explore Staff login", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Explore Member login", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Confirm discovery for Member" })).toBeVisible();
+  expect(selected).toBeUndefined();
+  await page.getByRole("button", { name: "Confirm and start discovery" }).click();
+  await expect.poll(() => selected).toMatchObject({ choice_id: "member", fields: [] });
+  await expect.poll(() => resumed).toMatchObject({ credential_ref: null, selected_branches: ["member-form"], resume_application_map_id: "map1" });
+});
+
 test("scratch discovery starts without an old role and clears the old role dropdown while starting", async ({
   page,
 }) => {

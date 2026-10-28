@@ -240,14 +240,18 @@ export default function Discovery({
       onStarted(data.job_id);
     },
   );
-  const requestRun = (keys: string[], scratch = false) =>
+  const requestRun = (keys: string[], scratch = false, selectedRole = role) => {
+    if (!scratch && selectedRole.id !== role.id) {
+      updateExplorer({ ...explorer, active: selectedRole.id });
+    }
     setConfirmation({
-      roleId: role.id,
-      label: scratch || !map ? "Application entry" : role.label,
-      ref: scratch || !map ? null : role.ref,
+      roleId: selectedRole.id,
+      label: scratch || !map ? "Application entry" : selectedRole.label,
+      ref: scratch || !map ? null : selectedRole.ref,
       keys: [...keys],
       scratch,
     });
+  };
   const stopDiscovery = useAction(
     project.id,
     () => api.stopDiscovery(project.id),
@@ -331,6 +335,28 @@ export default function Discovery({
             error={accounts.error}
             retry={() => void accounts.refetch()}
           />
+        )}
+        {!awaitingFreshMap && roles.some((item) => item.choice) && (
+          <section className="notice" aria-label="Choose a login to continue">
+            <h3>Choose a login to continue</h3>
+            <p>
+              The entry page has been discovered. Choose one of the login
+              options found in the application to inspect its form. Protected
+              pages become available after you provide that login’s credentials.
+            </p>
+            <div className="actions">
+              {roles.filter((item) => item.choice).map((item) => (
+                <Button
+                  key={item.id}
+                  type="button"
+                  disabled={running || !!jobError}
+                  onClick={() => requestRun([], false, item)}
+                >
+                  Explore {item.label} login
+                </Button>
+              ))}
+            </div>
+          </section>
         )}
         {guidedMap && !awaitingFreshMap && (
           <DiscoveryPaths
@@ -642,7 +668,9 @@ export default function Discovery({
                 >
                   <RefreshCw size={16} />
                   {mode === "guided"
-                    ? switchingAccount
+                    ? role.choice
+                      ? "Explore selected login"
+                      : switchingAccount
                       ? "Discover selected account"
                       : "Explore selected paths"
                     : "Continue Discovery"}

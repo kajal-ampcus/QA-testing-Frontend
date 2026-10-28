@@ -13,7 +13,6 @@ export type ExplorerRole = {
 export const uniquePaths = (paths: Branch[] = []) => [
   ...new Map(
     paths
-      .filter((path) => path.path.length || path.status !== "completed")
       .map((path) => [
         path.key,
         path.path.length

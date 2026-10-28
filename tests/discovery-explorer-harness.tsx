@@ -49,6 +49,20 @@ const map = {
 } satisfies AppMap;
 function Harness() {
   const [running, setRunning] = useState(false);
+  const choosingLogin = new URLSearchParams(location.search).has("login-choice");
+  const activeMap: AppMap = choosingLogin ? {
+    ...map,
+    termination_reason: "WAITING_FOR_INPUT",
+    discovered_as_role: null,
+    discovery_checkpoint: {
+      ...map.discovery_checkpoint,
+      configuration: { ...map.discovery_checkpoint.configuration, credential_ref: null },
+      jobs: [{ key: "root", status: "completed", path: [] }],
+      account_contexts: {},
+      input_requests: [{ id: "choose-login", kind: "login_choice", status: "pending", fields: [],
+        choices: [{ id: "member", label: "Member" }, { id: "staff", label: "Staff" }] }],
+    },
+  } : map;
   return (
     <main style={{ padding: 20 }}>
       <Discovery
@@ -56,12 +70,12 @@ function Harness() {
           id: "p1",
           name: "Test",
           application_url: "https://sample.test",
-          credential_ref: "cred:Employee",
+          credential_ref: choosingLogin ? null : "cred:Employee",
         }}
         requirement={
           { req_code: "REQ-1", version: 1, title: "Test" } as Requirement
         }
-        map={map}
+        map={activeMap}
         job={
           running ? ({ id: "job1", status: "in_progress" } as never) : undefined
         }

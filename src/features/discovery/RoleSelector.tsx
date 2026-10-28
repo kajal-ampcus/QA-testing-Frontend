@@ -18,6 +18,7 @@ export function RoleSelector({
   const selected = roles.find((role) => role.id === active);
   const summary = (role: ExplorerRole) => {
     if (runningRef === role.ref || runningRef === role.id) return "In progress";
+    if (role.choice) return "Login found — explore it to discover its pages.";
     if (!role.paths.length) return "Not explored";
     return `${selectedCount} selected`;
   };

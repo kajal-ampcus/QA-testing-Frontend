@@ -12,6 +12,28 @@ test("login and dashboard urls share one flow name across locales", () => {
   assert.equal(flowNameFromUrl("/en/admin/users"), "Users");
   assert.equal(flowNameFromUrl("/orders"), "Orders");
   assert.equal(flowNameFromUrl(""), "Other");
+  assert.equal(flowNameFromUrl("/en"), "Homepage");
+});
+
+test("old-map login cases use explicit starting preconditions instead of reused IDs", () => {
+  const testCase = {
+    application_map_id: "old-map",
+    current: { preconditions: ["Browser is on /en/login"], steps: [
+      { action: "navigate", target: { state_code: "STATE-002" } },
+    ] },
+  } as TestCase;
+  const map = { id: "new-map", states: [{ state_code: "STATE-002", url_pattern: "/en/about" }] } as never;
+  assert.equal(flowNameForCase(testCase, map), "Login");
+  assert.equal(flowNameForCase(testCase), "Login");
+});
+
+test("an unknown state is not classified from its title or final dashboard assertion", () => {
+  const testCase = { current: { title: "Login test", preconditions: [], steps: [
+    { action: "navigate", target: { state_code: "UNKNOWN" } },
+    { action: "assert", target: { state_code: "DASH" } },
+  ] } } as TestCase;
+  const map = { id: "map", states: [{ state_code: "DASH", url_pattern: "/dashboard" }] } as never;
+  assert.equal(flowNameForCase(testCase, map), "Other");
 });
 
 test("later login cases join the same Login group", () => {

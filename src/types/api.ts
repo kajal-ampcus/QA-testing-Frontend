@@ -306,6 +306,7 @@ export interface TestCase {
       };
       value?: string;
       expected?: string;
+      assertion?: Record<string, string> | null;
     }[];
     expected_result: string;
     test_data: Record<string, unknown>;
