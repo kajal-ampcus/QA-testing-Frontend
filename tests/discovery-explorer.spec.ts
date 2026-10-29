@@ -207,3 +207,24 @@ test("search, status filters and clearing a role do not change other selections"
     paths.getByRole("checkbox", { name: /^Payslips/ }),
   ).toBeChecked();
 });
+
+test("Run again resumes the exact completed branch", async ({ page }) => {
+  let submitted: Record<string, unknown> | undefined;
+  await page.route("**/api/v1/application-maps/projects/p1/discover", (route) => {
+    submitted = route.request().postDataJSON();
+    return route.fulfill({ json: { job_id: "rerun-job" } });
+  });
+  await page.goto("/tests/discovery-explorer-harness.html");
+  const paths = page.getByRole("region", { name: "Saved discovery paths" });
+  await paths.getByRole("button", { name: "Run again" }).click();
+  await expect(
+    page.getByRole("heading", { name: "Confirm discovery for Employee" }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Confirm and start discovery" }).click();
+  await expect.poll(() => submitted).toMatchObject({
+    credential_ref: "cred:Employee",
+    selected_branches: ["employee-done"],
+    resume_application_map_id: "map1",
+    start_from_scratch: false,
+  });
+});
