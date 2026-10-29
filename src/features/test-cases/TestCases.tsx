@@ -104,7 +104,8 @@ function readImportCell(row: Record<string, unknown>, column: keyof typeof IMPOR
   // workbook's adjacent "Test Case" identifier column).
   for (const alias of IMPORT_COLUMNS[column]) {
     const entry = Object.entries(row).find(([name]) => normaliseColumn(name) === normaliseColumn(alias));
-    if (entry) return String(entry[1] ?? "").trim();
+    const value = String(entry?.[1] ?? "").trim();
+    if (value) return value;
   }
   return "";
 }
@@ -143,11 +144,16 @@ export function parseExcelTestCases(workbook: XLSX.WorkBook): ImportedCase[] {
     const inlineSteps = splitImportLines(readImportCell(row, "steps"));
     const linkedSteps = stepsByCase.get((rowKey || suppliedTitle).toLowerCase()) ?? [];
     const stepNotes = inlineSteps.length ? inlineSteps : linkedSteps;
-    const title = suppliedTitle || suppliedObjective || stepNotes[0] || `Imported test case ${index + 1}`;
+    const rawTitle = suppliedTitle || suppliedObjective || stepNotes[0] || `Imported test case ${index + 1}`;
+    const title = rawTitle.length < 3 ? `Test case: ${rawTitle}` : rawTitle;
     if (!suppliedTitle) inferred.push("Title");
-    const objective = suppliedObjective || `Verify: ${title}`;
-    if (!suppliedObjective) inferred.push("Objective");
-    const expectedResult = suppliedExpected || `The application handles the scenario successfully: ${title}.`;
+    const objective = suppliedObjective.length >= 3
+      ? suppliedObjective
+      : suppliedObjective ? `Verify ${suppliedObjective}: ${title}` : `Verify: ${title}`;
+    if (suppliedObjective.length < 3) inferred.push("Objective");
+    const expectedResult = suppliedExpected
+      ? suppliedExpected.length < 3 ? `Expected result: ${suppliedExpected}` : suppliedExpected
+      : `The application handles the scenario successfully: ${title}.`;
     if (!suppliedExpected) inferred.push("Expected Result");
     const kind = readImportCell(row, "category").toUpperCase();
     return {
@@ -301,46 +307,43 @@ function CreateEdgeCaseForm({
     requirements.find((item) => item.id === defaultRequirementId) ||
     requirements[0];
   const [requirementId, setRequirementId] = useState(first?.id || "");
-  const requirement = requirements.find((item) => item.id === requirementId);
-  const [acId, setAcId] = useState(
-    requirement?.acceptance_criteria[0]?.id || "",
-  );
   const [category, setCategory] = useState<
     "POSITIVE" | "NEGATIVE" | "EDGE_CASE"
   >("EDGE_CASE");
   const [title, setTitle] = useState("");
   const [objective, setObjective] = useState("");
   const [expected, setExpected] = useState("");
-  const [preconditions, setPreconditions] = useState("");
-  const [stepNotes, setStepNotes] = useState("");
-  const [startState, setStartState] = useState(
-    map?.states[0]?.state_code || "",
-  );
+  const [duplicateWarning, setDuplicateWarning] = useState("");
   const create = useAction(
     projectId,
     (body: Parameters<typeof api.createTest>[1]) =>
       api.createTest(projectId, body),
-    onClose,
+    (result) => {
+      if (result.already_exists) {
+        setDuplicateWarning(`A test case with this scenario is already present: ${result.tc_code} — ${result.current.title}. No new test case was added.`);
+      } else {
+        onClose();
+      }
+    },
   );
   return (
     <form
       onSubmit={(event) => {
         event.preventDefault();
-        if (!title.trim() || !expected.trim() || !requirementId || !acId) {
+        setDuplicateWarning("");
+        if (title.trim().length < 3 || objective.trim().length < 3 || expected.trim().length < 3 || !requirementId) {
           return;
         }
         create.mutate({
           requirement_id: requirementId,
           ...(map?.id ? { application_map_id: map.id } : {}),
           title: title.trim(),
-          objective:
-            objective.trim() || `Verify this edge case: ${title.trim()}`,
+          objective: objective.trim(),
           expected_result: expected.trim(),
           category,
-          traceability: [acId],
-          preconditions: lines(preconditions),
-          step_notes: lines(stepNotes),
-          ...(startState ? { start_state_code: startState } : {}),
+          traceability: [],
+          skip_existing: true,
+          manual_entry: true,
         });
       }}
     >
@@ -356,27 +359,11 @@ function CreateEdgeCaseForm({
           onChange={(event) => {
             const nextId = event.target.value;
             setRequirementId(nextId);
-            const next = requirements.find((item) => item.id === nextId);
-            setAcId(next?.acceptance_criteria[0]?.id || "");
           }}
         >
           {requirements.map((item) => (
             <option value={item.id} key={item.id}>
               {item.req_code} · {item.title}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label>
-        Acceptance criterion
-        <select
-          required
-          value={acId}
-          onChange={(event) => setAcId(event.target.value)}
-        >
-          {(requirement?.acceptance_criteria || []).map((ac) => (
-            <option value={ac.id} key={ac.id}>
-              {ac.id}: {ac.text}
             </option>
           ))}
         </select>
@@ -409,47 +396,13 @@ function CreateEdgeCaseForm({
       <label>
         What this verifies
         <textarea
+          required
+          minLength={3}
+          maxLength={800}
           rows={2}
           placeholder="Confirm the application rejects the action at this boundary."
           value={objective}
           onChange={(event) => setObjective(event.target.value)}
-        />
-      </label>
-      {!!map?.states.length && (
-        <label>
-          Starting page
-          <select
-            value={startState}
-            onChange={(event) => setStartState(event.target.value)}
-          >
-            {map.states.map((state) => (
-              <option value={state.state_code} key={state.state_code}>
-                {state.state_code} · {state.url_pattern}
-              </option>
-            ))}
-          </select>
-        </label>
-      )}
-      <label>
-        Steps to reproduce
-        <span className="field-hint">
-          Optional. One action per line. A navigate step is added for you.
-        </span>
-        <textarea
-          rows={4}
-          placeholder={"Enter an empty quantity\nSubmit the order"}
-          value={stepNotes}
-          onChange={(event) => setStepNotes(event.target.value)}
-        />
-      </label>
-      <label>
-        Preconditions
-        <span className="field-hint">Optional. One condition per line.</span>
-        <textarea
-          rows={2}
-          placeholder="User is signed in as Kitchen"
-          value={preconditions}
-          onChange={(event) => setPreconditions(event.target.value)}
         />
       </label>
       <label>
@@ -464,6 +417,7 @@ function CreateEdgeCaseForm({
         />
       </label>
       {!!create.error && <ErrorState error={create.error} />}
+      {duplicateWarning && <div className="notice" role="alert"><strong>Test case already present</strong><p>{duplicateWarning}</p></div>}
       <div className="actions">
         <Button type="button" variant="secondary" onClick={onClose}>
           Cancel
@@ -471,10 +425,10 @@ function CreateEdgeCaseForm({
         <Button
           type="submit"
           busy={create.isPending}
-          disabled={!requirementId || !acId || !map}
+          disabled={!requirementId || !map}
         >
           <Plus size={15} />
-          Save edge case
+          Save test case
         </Button>
       </div>
     </form>
@@ -706,6 +660,7 @@ export default function TestCases({
   const [bulkReviewer, setBulkReviewer] = useState("");
   const importInput = useRef<HTMLInputElement>(null);
   const [importMessage, setImportMessage] = useState("");
+  const [importWarning, setImportWarning] = useState("");
   // Regeneration retains previous approved cases as audit history but removes
   // them from the active review set. The newly generated cases are DRAFT.
   const activeTests = tests.filter((test) => test.status !== "OUTDATED");
@@ -720,6 +675,8 @@ export default function TestCases({
     () => setSelected(undefined),
   );
   const importExcel = useAction(projectId, async (file: File) => {
+    setImportMessage("");
+    setImportWarning("");
     if (!map || !requirement?.acceptance_criteria.length) {
       throw new Error("Select a requirement with acceptance criteria and complete discovery first.");
     }
@@ -728,20 +685,35 @@ export default function TestCases({
     const acId = requirement.acceptance_criteria[0].id;
     const startState = map.states[0]?.state_code;
     let inferred = 0;
+    let imported = 0;
+    let skipped = 0;
     for (const item of cases) {
-      await api.createTest(projectId, {
+      const result = await api.createTest(projectId, {
         requirement_id: requirement.id, application_map_id: map.id, title: item.title,
         objective: item.objective, expected_result: item.expectedResult, category: item.category,
         traceability: [acId], preconditions: item.preconditions,
-        step_notes: item.stepNotes, start_state_code: startState,
+        step_notes: item.stepNotes, start_state_code: startState, skip_existing: true,
       });
+      if (result.already_exists) {
+        skipped++;
+        continue;
+      }
+      imported++;
       inferred += item.inferred.length;
     }
-    return { imported: cases.length, inferred };
-  }, ({ imported, inferred }) => setImportMessage(
+    return { imported, skipped, inferred };
+  }, ({ imported, skipped, inferred }) => {
+    setImportWarning(skipped
+      ? imported === 0
+        ? `All ${skipped} test cases in this file are already present. ${skipped} duplicates skipped. 0 test cases added.`
+        : `${skipped} of ${imported + skipped} test cases are already present and were skipped. ${imported} new test case${imported === 1 ? " was" : "s were"} added.`
+      : "");
+    setImportMessage(imported ?
     `${imported} Excel test case${imported === 1 ? "" : "s"} imported as drafts.`
-      + (inferred ? ` ${inferred} missing field${inferred === 1 ? " was" : "s were"} filled from the row context.` : ""),
-  ));
+      + (skipped ? ` ${skipped} test case${skipped === 1 ? " is" : "s are"} already present and ${skipped === 1 ? "was" : "were"} skipped.` : "")
+      + (inferred ? ` ${inferred} missing field${inferred === 1 ? " was" : "s were"} filled from the row context.` : "")
+      : "");
+  });
   const bulkReview = useAction(
     projectId,
     () =>
@@ -874,6 +846,7 @@ export default function TestCases({
         </div>
         {exportError && <p className="notice error">{exportError}</p>}
         {importExcel.error && <ErrorState error={importExcel.error} />}
+        {importWarning && <div className="notice" role="alert"><strong>Duplicate test cases skipped</strong><p>{importWarning}</p></div>}
         {importMessage && <p className="notice success">{importMessage}</p>}
         {!!wholeGraphError && <ErrorState error={wholeGraphError} />}
         {!!coverageError && <ErrorState error={coverageError} />}
@@ -1219,7 +1192,7 @@ export default function TestCases({
                         : undefined;
                     return ac ? `${id}: ${ac.text}` : id;
                   })
-                  .join("\n"),
+                  .join("\n") || "Not linked to acceptance criteria",
               },
               {
                 title: `${selected.tc_code} · Test version ${selected.current_version}`,

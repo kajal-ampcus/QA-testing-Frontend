@@ -456,8 +456,10 @@ export const api = {
       preconditions?: string[];
       step_notes?: string[];
       start_state_code?: string;
+      skip_existing?: boolean;
+      manual_entry?: boolean;
     },
-  ) => request<TestCase>(`/test-cases/projects/${projectId}`, body),
+  ) => request<TestCase & { already_exists?: boolean }>(`/test-cases/projects/${projectId}`, body),
 
   reviseTest: (
     testCaseId: string,
