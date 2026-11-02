@@ -228,3 +228,45 @@ test("Run again resumes the exact completed branch", async ({ page }) => {
     start_from_scratch: false,
   });
 });
+
+
+test("Feedback page section and form remain visible when shared navigation has no children", async ({ page }) => {
+  await page.goto("/tests/discovery-explorer-harness.html?feedback-form");
+  const paths = page.getByRole("region", { name: "Saved discovery paths" });
+  await expect(paths.getByRole("checkbox", { name: /^Contact/ })).toBeVisible();
+  await expect(paths.getByRole("checkbox", { name: /^Feedback Landing/ })).toBeVisible();
+  const form = page.getByRole("region", { name: "Observed form on Landing / Feedback (https://sample.test/feedback)" });
+  await form.scrollIntoViewIfNeeded();
+  await expect(form).toBeVisible();
+  const formSelection = form.getByRole("checkbox", { name: /^Feedback form/ });
+  await expect(formSelection).toBeVisible();
+  await formSelection.check();
+  await expect(formSelection).toBeChecked();
+  await expect(paths.getByRole("checkbox", { name: /^Feedback Landing/ })).toBeChecked();
+  await expect(form.getByRole("button", { name: "Explore form", exact: true })).toBeVisible();
+  await expect(form.locator("table")).toHaveCount(0);
+  await expect(form.locator(".notice")).toHaveCount(0);
+  await expect(form.locator(".discovery-path-row")).toHaveCount(1);
+  await expect(form.getByText("Name", { exact: true })).toHaveCount(0);
+});
+
+
+test("post-generation Feedback values can be entered and assigned to their case", async ({ page }) => {
+  let saved: Record<string, unknown> | undefined;
+  await page.route("**/api/v1/projects/p1", (route) => route.fulfill({ json: { id: "p1", name: "Feedback test", application_url: "https://sample.test", credential_ref: null } }));
+  await page.route("**/api/v1/test-cases/projects/p1", (route) => route.fulfill({ json: [{ id: "case1", tc_code: "TC-FEEDBACK", current: { title: "Submit feedback" } }] }));
+  await page.route("**/api/v1/projects/p1/form-test-data", (route) => {
+    if (route.request().method() === "POST") {
+      saved = route.request().postDataJSON();
+      return route.fulfill({ json: { ...saved, id: "fixture1", project_id: "p1", active: true, created_at: "" } });
+    }
+    return route.fulfill({ json: [] });
+  });
+  await page.route("**/api/v1/projects/p1/form-test-data/smart-template", (route) => route.fulfill({ json: { case_count: 1, rows: ["Name", "Message"].map((name, index) => ({ test_case_id: "case1", test_case_code: "TC-FEEDBACK", field_code: `S1/E${index}`, field_key: name, field_name: name, field_type: "text", form_group: "S1", scenario: "POSITIVE", value: null, missing: true, source: "missing", runtime_only: false, fixture_id: null })) } }));
+  await page.goto("/tests/discovery-explorer-harness.html?project-data");
+  await page.getByRole("button", { name: "Supply missing value", exact: true }).first().click();
+  await page.getByLabel("Name", { exact: true }).fill("Test user");
+  await page.getByLabel("Message", { exact: true }).fill("Test feedback");
+  await page.getByRole("button", { name: "Save test data", exact: true }).click();
+  await expect.poll(() => saved).toMatchObject({ test_case_id: "case1", test_data: { Name: "Test user", Message: "Test feedback" } });
+});

@@ -21,7 +21,7 @@ import { loginFailureNotice } from "../application-map/ApplicationMap";
 import { DiscoveryPaths } from "./DiscoveryPaths";
 import { explorerRoles, readExplorerState, selectPaths } from "./explorerModel";
 import { RoleSelector } from "./RoleSelector";
-import { SavedInputs } from "./SavedInputs";
+
 
 export default function Discovery({
   project,
@@ -362,6 +362,8 @@ export default function Discovery({
           <DiscoveryPaths
             key={role.id}
             paths={savedBranches}
+            states={map?.states ?? []}
+            baseURL={map?.base_url || project.application_url || ""}
             selected={branches}
             onSelect={setBranches}
             disabled={false}
@@ -737,7 +739,7 @@ export default function Discovery({
 
       {/* ── Right: sidebar ───────────────────────────────────────────── */}
       <aside>
-        <SavedInputs projectId={project.id} />
+        <p className="muted">Discovery collects login credentials only. Configure form test data after generating test cases.</p>
       </aside>
 
       <button

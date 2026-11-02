@@ -793,6 +793,7 @@ export default function TestCases({
             <p>Traceable scenarios. Clear intent. Ready for your review.</p>
           </div>
           <div className="actions">
+            <a className="button secondary" href={`/projects/${projectId}/data`}>Configure test data</a>
             <Button
               onClick={() => {
                 setSelected(undefined);

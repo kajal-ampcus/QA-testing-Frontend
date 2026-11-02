@@ -186,11 +186,8 @@ export function InputRequests({
     <div className="input-requests" id="discovery-inputs">
       <h3>Values this application needs</h3>
       <p>
-        Discovery found a live form that it can test. Enter test values below;
-        the form will not be submitted until you explicitly approve it.
-        {running
-          ? " Other pages keep being explored while you fill them in."
-          : " Approve the submission, then continue discovery so it can be tested."}
+        Discovery collects login inputs here to access protected pages. Feedback and other form values are collected in Project Data after test-case generation.
+        {running ? " Other pages keep being explored while you complete authentication." : " Sign in to continue authenticated discovery."}
       </p>
       {visible.map((request) => (
         <form

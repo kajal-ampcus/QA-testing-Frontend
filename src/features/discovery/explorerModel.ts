@@ -1,6 +1,34 @@
-import type { DiscoveryCheckpoint, ProjectAccount } from "../../types/api.ts";
+import type { AppState, DiscoveryCheckpoint, ProjectAccount } from "../../types/api.ts";
 
 export type Branch = NonNullable<DiscoveryCheckpoint["jobs"]>[number];
+
+export function observedForm(branch: Branch, states: AppState[], baseURL: string) {
+  if (branch.status !== "completed") return [];
+  const route = (value: string) => {
+    try { const url = new URL(value, baseURL); return url.origin + url.pathname.replace(/\/$/, "") + url.search + url.hash; }
+    catch { return value; }
+  };
+  const destination = branch.path.at(-1)?.url;
+  const capturedFields = branch.observed_form?.fields;
+  const matching: Array<{ elements: Record<string, unknown>[] }> = capturedFields ? [{ elements: capturedFields.map((field) => ({ ...field, element_code: field.key })) }] : branch.result_fingerprint
+    ? states.filter((state) => state.fingerprint === branch.result_fingerprint)
+    : destination ? states.filter((state) => route(state.url_pattern) === route(destination)) : [];
+  const fields = new Map<string, { code: string; name: string; type: string; required: boolean; options: string[] }>();
+  for (const state of matching) for (const element of state.elements) {
+    const scope = String(element.locator_scope || element.landmark || "");
+    if (/\b(header|footer|nav|banner|contentinfo|navigation|search)\b/i.test(scope)) continue;
+    const role = String(element.role || "");
+    const type = String(element.input_type || element.type || role);
+    if (!["textbox", "input", "combobox", "checkbox", "radio", "spinbutton"].includes(role) && type !== "file") continue;
+    const name = String(element.name || element.element_code || "Input");
+    if (!scope && /^search$/i.test(name.trim())) continue;
+    const validation = element.validation as Record<string, unknown> | undefined;
+    fields.set(`${role}/${name}`, { code: String(element.element_code || name), name, type,
+      required: Boolean(element.required || validation?.required || /[*?]\s*$/.test(name)),
+      options: Array.isArray(element.options) ? element.options.filter((option): option is string => typeof option === "string") : [] });
+  }
+  return [...fields.values()];
+}
 export type ExplorerRole = {
   id: string;
   label: string;
@@ -10,17 +38,25 @@ export type ExplorerRole = {
   configured: boolean;
 };
 
-export const uniquePaths = (paths: Branch[] = []) => [
-  ...new Map(
-    paths
-      .map((path) => [
-        path.key,
-        path.path.length
-          ? path
-          : { ...path, path: [{ role: "page", name: "Entry page" }] },
-      ]),
-  ).values(),
-];
+export function uniquePaths(paths: Branch[] = []): Branch[] {
+  const unique = [...new Map(paths.map((path) => [path.key, path])).values()];
+  const sameStep = (left: Branch["path"][number], right: Branch["path"][number]) =>
+    left.role === right.role && left.name === right.name && left.url === right.url && left.value === right.value;
+  // Old checkpoints can contain the same landing navigation under every page.
+  // Match destinations and ancestor paths, never labels alone or other roles.
+  const redundant = unique.filter((branch) => {
+    const last = branch.path.at(-1);
+    if (last?.role !== "link" || !last.url || branch.path.length < 2) return false;
+    return unique.some((ancestor) => {
+      const target = ancestor.path.at(-1);
+      return ancestor.key.split("|")[0] === branch.key.split("|")[0]
+        && ancestor.path.length < branch.path.length
+        && target?.role === "link" && target.url === last.url
+        && ancestor.path.slice(0, -1).every((step, index) => sameStep(step, branch.path[index]));
+    });
+  });
+  return unique.filter((branch) => !redundant.some((parent) => parent.key === branch.key)).map((path) => path.path.length ? path : { ...path, path: [{ role: "page", name: "Entry page" }] });
+}
 
 export function explorerRoles(
   checkpoint: DiscoveryCheckpoint | null | undefined,

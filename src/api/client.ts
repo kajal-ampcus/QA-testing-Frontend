@@ -405,6 +405,8 @@ export const api = {
     return response.blob();
   },
 
+  smartTestDataTemplate: (projectId: string, signal?: AbortSignal) =>
+    request<{ case_count: number; rows: Array<{ test_case_id: string; test_case_code: string; field_code: string; field_key: string; field_name: string; field_type: string; form_group: string; scenario: string; value: unknown; missing: boolean; source: string; runtime_only: boolean; fixture_id: string | null }> }>(`/projects/${projectId}/form-test-data/smart-template`, undefined, signal),
   formTestData: (projectId: string, signal?: AbortSignal) =>
     request<FormTestFixture[]>(`/projects/${projectId}/form-test-data`, undefined, signal),
   createFormTestData: (projectId: string, body: Omit<FormTestFixture, "id" | "project_id" | "active" | "created_at">) =>
@@ -520,7 +522,7 @@ export const api = {
       rediscover,
     }),
 
-  downloadAutomation: async (projectId: string, generationId: string) => {
+  downloadAutomation: async (projectId: string, generationId: string, includeCredentials = false) => {
     const headers: Record<string, string> = {};
     const apiKey = import.meta.env.VITE_API_KEY;
     if (apiKey) headers["X-API-Key"] = apiKey;
@@ -529,7 +531,7 @@ export const api = {
       "",
     );
     const response = await fetch(
-      `${base}/automation/projects/${projectId}/generations/${generationId}/download`,
+      `${base}/automation/projects/${projectId}/generations/${generationId}/download?include_credentials=${includeCredentials}`,
       { headers },
     );
     if (!response.ok) {

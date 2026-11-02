@@ -16,10 +16,13 @@ export default function ProjectData({ projectId }: { projectId: string }) {
   const navigate = useNavigate();
   const client = useQueryClient();
   const [section, setSection] = useState<Section>("forms");
+  const template = useQuery({ queryKey: ["smart-template", projectId], queryFn: ({ signal }) => api.smartTestDataTemplate(projectId, signal) });
   const [search, setSearch] = useState("");
   const [scenario, setScenario] = useState("all");
   const [editingAccount, setEditingAccount] = useState<ProjectAccount | null | false>(false);
   const [editingFixture, setEditingFixture] = useState<FormTestFixture | null | false>(false);
+  const [missingOnly, setMissingOnly] = useState(true);
+  const [templateDraft, setTemplateDraft] = useState<Partial<FormTestFixture>>({});
   const [notice, setNotice] = useState("");
   const [importResult, setImportResult] = useState<ImportSummary | null>(null);
 
@@ -28,6 +31,7 @@ export default function ProjectData({ projectId }: { projectId: string }) {
   const fixtures = useQuery({ queryKey: ["project-data", projectId, "fixtures"], queryFn: ({ signal }) => api.formTestData(projectId, signal) });
   const tests = useQuery({ queryKey: ["workspace", projectId, "tests"], queryFn: ({ signal }) => api.tests(projectId, signal) });
   const refresh = () => Promise.all([
+    client.invalidateQueries({ queryKey: ["smart-template", projectId] }),
     client.invalidateQueries({ queryKey: ["accounts", projectId] }),
     client.invalidateQueries({ queryKey: ["project-data", projectId, "fixtures"] }),
     client.invalidateQueries({ queryKey: ["workspace", projectId, "tests"] }),
@@ -47,6 +51,7 @@ export default function ProjectData({ projectId }: { projectId: string }) {
     const q = search.toLowerCase();
     return (!q || `${item.label} ${item.form_group} ${item.tags.join(" ")} ${item.expected_result || ""}`.toLowerCase().includes(q)) && (scenario === "all" || item.test_type === scenario);
   }), [fixtures.data, search, scenario]);
+  const visibleRequirements = (template.data?.rows || []).filter((row) => !missingOnly || row.missing);
   const loading = project.isPending || accounts.isPending || fixtures.isPending || tests.isPending;
   const error = project.error || accounts.error || fixtures.error || tests.error;
 
@@ -87,12 +92,31 @@ export default function ProjectData({ projectId }: { projectId: string }) {
           <button role="tab" aria-selected={section === "credentials"} className={section === "credentials" ? "active" : ""} onClick={() => { setSection("credentials"); setSearch(""); setScenario("all"); }}><KeyRound size={16} /> Login Credentials <span>{accounts.data?.length || 0}</span></button>
           <button role="tab" aria-selected={section === "forms"} className={section === "forms" ? "active" : ""} onClick={() => { setSection("forms"); setSearch(""); setScenario("all"); }}><Shield size={16} /> Form Test Data <span>{fixtures.data?.length || 0}</span></button>
         </div>
+        {section === "forms" && <Card>
+          <h3>Test data requirements</h3>
+          <label><input type="checkbox" checked={missingOnly} onChange={(event) => setMissingOnly(event.target.checked)} /> Show only missing values</label>
+          <p className="muted">Generate test cases first, then supply missing form values here or import Excel. Login credentials and runtime challenges are resolved separately.</p>
+          {template.error && <ErrorState error={template.error} />}
+          {template.isPending ? <LoadingState label="Loading field requirements" /> : <div className="data-table-wrap"><table className="data-table"><thead><tr><th>Test case</th><th>Field</th><th>Scenario</th><th>Source</th><th>Action</th></tr></thead><tbody>
+            {visibleRequirements.map((row) => <tr key={`${row.test_case_id}/${row.field_code}`}><td>{row.test_case_code}</td><td>{row.field_name}<small>{row.field_code} ? {row.field_type}</small></td><td>{row.scenario}</td><td>{row.source}</td><td>{row.runtime_only ? "Runtime input" : <Button variant="secondary" onClick={() => {
+              const assigned = fixtures.data?.find((fixture) => fixture.id === row.fixture_id);
+              if (assigned) setEditingFixture(assigned);
+              else {
+                const data: Record<string, unknown> = {};
+                for (const field of template.data?.rows || []) if (field.test_case_id === row.test_case_id && !field.runtime_only) data[field.field_key] = field.missing ? null : field.value;
+                setTemplateDraft({ label: row.test_case_code, form_group: row.form_group, test_type: row.scenario === "NEGATIVE" ? "negative" : row.scenario === "EDGE_CASE" ? "edge" : "positive", test_case_id: row.test_case_id, test_data: data });
+                setEditingFixture(null);
+              }
+            }}>{row.missing ? "Supply missing value" : "Review values"}</Button>}</td></tr>)}
+            {!visibleRequirements.length && <tr><td colSpan={5}>{template.data?.rows.length ? "No missing values in the mapped inputs. Uncheck ?Show only missing values? to review existing values and runtime fields." : template.data?.case_count ? "Generated cases have no mapped form-input requirements. Check that Feedback/form cases reference the discovered page and its controls." : "Generate test cases first. Discovered form fields become test-data requirements when cases reference them."}</td></tr>}
+          </tbody></table></div>}
+        </Card>}
         <Card className="project-data-card">
           <div className="data-toolbar">
             <label className="data-search"><Search size={16} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={section === "credentials" ? "Search label, role or tag" : "Search fixture, form or tag"} /></label>
             <select aria-label="Filter by scenario" value={scenario} onChange={(event) => setScenario(event.target.value)}><option value="all">All scenarios</option>{scenarioOptions.map((item) => <option key={item} value={item}>{item[0].toUpperCase() + item.slice(1)}</option>)}</select>
             <label className="button secondary upload-button"><Upload size={15} /> Import Excel<input type="file" accept=".xlsx" onChange={(event) => { const file = event.target.files?.[0]; if (file) (section === "credentials" ? importAccounts : importFixtures).mutate(file); event.currentTarget.value = ""; }} /></label>
-            <Button onClick={() => { setNotice(""); section === "credentials" ? setEditingAccount(null) : setEditingFixture(null); }}><Plus size={15} /> Add {section === "credentials" ? "credential" : "test data"}</Button>
+            <Button onClick={() => { setNotice(""); section === "credentials" ? setEditingAccount(null) : (setTemplateDraft({}), setEditingFixture(null)); }}><Plus size={15} /> Add {section === "credentials" ? "credential" : "test data"}</Button>
           </div>
           <p className="data-import-hint">Excel columns: {section === "credentials" ? "label, role, username, password; optional login_url, test_type, tags." : "label, form_group, test_type, test_data (JSON object); optional expected_result, tags, test_case_id."}</p>
           {(importAccounts.isPending || importFixtures.isPending) && <p className="data-notice">Importing rows…</p>}
@@ -111,7 +135,7 @@ export default function ProjectData({ projectId }: { projectId: string }) {
         </Card>
       </>}
       {editingAccount !== false && <CredentialDrawer project={project.data} account={editingAccount || undefined} onClose={() => setEditingAccount(false)} onSave={saveAccount} />}
-      {editingFixture !== false && <FixtureDrawer fixture={editingFixture || undefined} tests={tests.data || []} onClose={() => setEditingFixture(false)} onSave={saveFixture} />}
+      {editingFixture !== false && <FixtureDrawer fixture={editingFixture || undefined} draft={templateDraft} tests={tests.data || []} onClose={() => setEditingFixture(false)} onSave={saveFixture} />}
     </Shell>
   );
 }
@@ -149,7 +173,8 @@ function CredentialDrawer({ project, account, onClose, onSave }: { project?: Pro
   </form></DetailDrawer>;
 }
 
-function FixtureDrawer({ fixture, tests, onClose, onSave }: { fixture?: FormTestFixture; tests: TestCase[]; onClose: () => void; onSave: (value: Omit<FormTestFixture, "id" | "project_id" | "active" | "created_at">) => Promise<void> }) {
+function FixtureDrawer({ fixture: storedFixture, draft, tests, onClose, onSave }: { fixture?: FormTestFixture; draft?: Partial<FormTestFixture>; tests: TestCase[]; onClose: () => void; onSave: (value: Omit<FormTestFixture, "id" | "project_id" | "active" | "created_at">) => Promise<void> }) {
+  const fixture = storedFixture || draft;
   const [label, setLabel] = useState(fixture?.label || "");
   const [group, setGroup] = useState(fixture?.form_group || "");
   const [type, setType] = useState<ScenarioType>(fixture?.test_type || "positive");
@@ -159,11 +184,14 @@ function FixtureDrawer({ fixture, tests, onClose, onSave }: { fixture?: FormTest
   const [testCase, setTestCase] = useState(fixture?.test_case_id || "");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const templateFields = !storedFixture && draft?.test_case_id ? Object.keys(draft.test_data || {}) : [];
+  const fieldValues = useMemo(() => { try { return JSON.parse(json) as Record<string, unknown>; } catch { return {}; } }, [json]);
   const submit = async (event: FormEvent) => {
     event.preventDefault(); setError("");
     let values: Record<string, unknown>;
     try { values = JSON.parse(json); if (!values || Array.isArray(values) || typeof values !== "object") throw new Error("Use a JSON object."); }
     catch { setError("Test data must be a valid JSON object."); return; }
+    if (templateFields.some((key) => values[key] === null || values[key] === undefined)) { setError("Supply every missing field value, or explicitly enter an empty value for a blank-input scenario."); return; }
     setBusy(true);
     try { await onSave({ label: label.trim(), form_group: group.trim(), test_type: type, test_data: values, expected_result: expected.trim() || null, tags: tagsOf(tags), test_case_id: testCase || null }); }
     catch (err) { setError(err instanceof Error ? err.message : "Could not save test data."); } finally { setBusy(false); }
@@ -171,7 +199,8 @@ function FixtureDrawer({ fixture, tests, onClose, onSave }: { fixture?: FormTest
   return <DetailDrawer title={fixture ? "Edit form test data" : "Add form test data"} onClose={onClose}><form className="data-form" onSubmit={submit}>
     <label>Fixture name<input required maxLength={120} value={label} onChange={(event) => setLabel(event.target.value)} placeholder="Valid contact request" /></label>
     <div className="data-form-grid"><label>Form group<input required maxLength={120} value={group} onChange={(event) => setGroup(event.target.value)} placeholder="Contact form" /></label><label>Scenario type<select value={type} onChange={(event) => setType(event.target.value as ScenarioType)}>{scenarioOptions.map((item) => <option key={item}>{item}</option>)}</select></label></div>
-    <label>Assign to test case<select value={testCase} onChange={(event) => setTestCase(event.target.value)}><option value="">Keep as library fixture</option>{tests.map((item) => <option key={item.id} value={item.id}>{item.tc_code} · {item.current.title}</option>)}</select><small>Assigned fixtures replace test data only for this case during code generation.</small></label>
+    <label>Assign to test case<select value={testCase} onChange={(event) => setTestCase(event.target.value)}><option value="">Keep as library fixture</option>{tests.map((item) => <option key={item.id} value={item.id}>{item.tc_code} · {item.current.title}</option>)}</select><small>Assigned fixtures supply values for this case during generation and execution. Explicit scenario overrides take priority.</small></label>
+    {templateFields.length > 0 && <fieldset><legend>Form test values</legend><p className="muted">Enter the scenario inputs. Use ?Empty value? for an intentional blank.</p>{templateFields.map((key) => <div key={key}><label>{key}<input type={/password|secret/i.test(key) ? "password" : "text"} value={typeof fieldValues[key] === "string" ? fieldValues[key] as string : fieldValues[key] == null ? "" : JSON.stringify(fieldValues[key])} placeholder={fieldValues[key] == null ? "Missing value" : ""} onChange={(event) => setJson(JSON.stringify({ ...fieldValues, [key]: event.target.value }, null, 2))} /></label><button type="button" className="text-action" onClick={() => setJson(JSON.stringify({ ...fieldValues, [key]: "" }, null, 2))}>Empty value</button></div>)}</fieldset>}
     <label>Field values (JSON)<textarea required rows={8} spellCheck={false} value={json} onChange={(event) => setJson(event.target.value)} /></label>
     <label>Expected result<input value={expected} onChange={(event) => setExpected(event.target.value)} placeholder="Validation message is shown" /></label>
     <label>Tags<input value={tags} onChange={(event) => setTags(event.target.value)} placeholder="required, contact (comma separated)" /></label>

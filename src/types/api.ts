@@ -119,6 +119,8 @@ export interface DiscoveryCheckpoint {
     status: string;
     path: Array<{ role: string; name: string; url?: string | null; value?: string | null }>;
     parent_fingerprint?: string | null;
+    result_fingerprint?: string | null;
+    observed_form?: { fields: DiscoveryInputField[]; actions: { role: string; name: string }[] } | null;
   }>;
   progress?: Record<string, string | number>;
   live_view?: {

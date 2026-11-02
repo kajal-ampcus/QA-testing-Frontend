@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { ChevronRight, Search } from "lucide-react";
-import { uniquePaths, type Branch } from "./explorerModel";
+import { observedForm, uniquePaths, type Branch } from "./explorerModel";
+import type { AppState } from "../../types/api";
 
 const stepLabel = (step: Branch["path"][number]) =>
   `${step.name || step.url || step.role}${step.value != null ? ` (${step.value})` : ""}`;
@@ -13,7 +14,7 @@ const route = (branch: Branch) =>
     ),
   ].join(" / ");
 const groupKey = (branch: Branch) =>
-  JSON.stringify([branch.parent_fingerprint, branch.path.slice(0, -1)]);
+  JSON.stringify(branch.path.slice(0, -1));
 const statusLabel = (status: string) =>
   status === "completed"
     ? "Complete"
@@ -26,6 +27,8 @@ const PAGE_SIZE = 100;
 
 export function DiscoveryPaths({
   paths: rawPaths,
+  states = [],
+  baseURL = "",
   selected,
   onSelect,
   onRunAgain,
@@ -33,6 +36,8 @@ export function DiscoveryPaths({
   executionDisabled = disabled,
 }: {
   paths: Branch[];
+  states?: AppState[];
+  baseURL?: string;
   selected: string[];
   onSelect: (keys: string[]) => void;
   onRunAgain: (key: string) => void;
@@ -55,6 +60,7 @@ export function DiscoveryPaths({
   );
   const groups = new Map<string, { label: string; paths: Branch[] }>();
   const selectableGroups = new Map<string, string[]>();
+  const forms = matching.filter((branch) => branch.status === "completed").map((branch) => ({ branch, fields: observedForm(branch, states, baseURL) })).filter((form) => form.fields.length > 0);
   for (const branch of matching) {
     if (branch.status === "completed") continue;
     const key = groupKey(branch);
@@ -73,6 +79,12 @@ export function DiscoveryPaths({
     };
     group.paths.push(branch);
     groups.set(key, group);
+  }
+  for (const form of forms) {
+    const key = JSON.stringify([form.branch.result_fingerprint || form.branch.path.at(-1)?.url, form.branch.path]);
+    if (![...groups.values()].some((group) => group.label === route(form.branch))) {
+      groups.set(key, { label: route(form.branch), paths: [] });
+    }
   }
   return (
     <section className="discovery-paths" aria-label="Saved discovery paths">
@@ -120,7 +132,7 @@ export function DiscoveryPaths({
                 <ChevronRight size={16} aria-hidden="true" />
                 <span>{group.label}</span>
                 <span className="discovery-path-count">
-                  {group.paths.length} shown
+                  {group.paths.length + forms.filter((form) => route(form.branch) === group.label).reduce((count, form) => count + 1, 0)} {forms.some((form) => route(form.branch) === group.label) ? "items" : "paths"}
                 </span>
               </summary>
               {!!selectable.length && (
@@ -196,6 +208,22 @@ export function DiscoveryPaths({
                   </li>
                 ))}
               </ul>
+              {forms.filter((form) => route(form.branch) === group.label).map(({ branch, fields }) => (
+                <section key={branch.key} aria-label={`Observed form on ${route(branch)}`}>
+                  <ul><li className={`discovery-path-row ${selected.includes(branch.key) ? "is-selected" : ""}`}>
+                    <label className="discovery-path-name">
+                      <input type="checkbox" disabled={disabled} checked={selected.includes(branch.key)} onChange={(event) => onSelect(event.target.checked ? [...new Set([...selected, branch.key])] : selected.filter((key) => key !== branch.key))} />
+                      <span>
+                        <span>{branch.path.at(-1)?.name?.replace(/\s*\*$/, "") || "Page"} form</span>
+                        <small className="discovery-path-context">{route(branch)} / Form</small>
+                        <small className="discovery-path-context">{fields.length} fields ? Explore this page to inspect the complete form</small>
+                      </span>
+                    </label>
+                    <span className="badge good">Discovered</span>
+                    <button type="button" className="button ghost" disabled={executionDisabled} onClick={() => onRunAgain(branch.key)}>Explore form</button>
+                  </li></ul>
+                </section>
+              ))}
             </details>
           );
         })}

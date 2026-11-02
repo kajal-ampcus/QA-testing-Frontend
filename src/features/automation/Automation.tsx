@@ -650,11 +650,14 @@ function SuiteActions({
   result: AutomationGeneration;
   beforeAccess: () => Promise<void>;
 }) {
+  const [includeCredentials, setIncludeCredentials] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [downloadError, setDownloadError] = useState("");
 
   return (
     <>
+      <label><input type="checkbox" checked={includeCredentials} onChange={(event) => setIncludeCredentials(event.target.checked)} /> Include credentials in standalone package</label>
+      {includeCredentials && <p role="alert">Credential values will be readable to anyone with this package. Requires administrator enablement and an authenticated API key.</p>}
       <div className="actions">
         <Button
           variant="secondary"
@@ -665,7 +668,7 @@ function SuiteActions({
 
             void beforeAccess()
               .then(() =>
-                api.downloadAutomation(projectId, result.generation_id),
+                api.downloadAutomation(projectId, result.generation_id, includeCredentials),
               )
               .catch((error: unknown) => {
                 setDownloadError(
