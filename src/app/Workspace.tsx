@@ -222,6 +222,9 @@ export default function Workspace({ id }: { id: string }) {
   };
   const onSaved = (saved: Requirement) => {
     setParams({
+      ...(params.get("returnToGeneration") === "true" ? {
+        returnToGeneration: "true", generation_states: params.get("generation_states") || "",
+      } : {}),
       requirement: saved.id,
       stage: String(saved.ambiguities.length ? 0 : 1),
     });
@@ -379,12 +382,14 @@ export default function Workspace({ id }: { id: string }) {
               {stage === 1 && r && (
                 <Approvals
                   projectId={id}
+                  returnToGeneration={params.get("returnToGeneration") === "true"}
                   requirement={r}
                   approval={approvals.data?.find(
                     (a) =>
-                      a.target_type === "requirement" && a.target_id === r.id,
+                      a.target_type === "requirement" && a.target_id === r.id
+                      && (a.target_version == null || a.target_version === r.version),
                   )}
-                  onNext={() => navigateStage(2)}
+                  onNext={() => navigateStage(params.get("returnToGeneration") === "true" ? 4 : 2)}
                   onRevise={() => navigateStage(0)}
                 />
               )}{" "}
@@ -439,8 +444,18 @@ export default function Workspace({ id }: { id: string }) {
                 map.data &&
                 ["COMPLETE", "PARTIAL"].includes(map.data.status) && (
                   <Generate
-                    key={`${r.id}:${map.data.id}`}
+                    key={`${r.id}:${r.version}:${map.data.id}:${params.get("generation_states") || ""}`}
                     requirement={r}
+                    requirements={all}
+                    initialStateCodes={(params.get("generation_states") || "").split(",").filter(Boolean)}
+                    onChooseRequirement={(requirementId, codes) => {
+                      generation.reset(); coverageGeneration.reset();
+                      setParams({ requirement: requirementId, stage: "4", generation_states: codes.join(","), returnToGeneration: "true" });
+                    }}
+                    onRequirementPrepared={(saved, codes) => {
+                      generation.reset(); coverageGeneration.reset();
+                      setParams({ requirement: saved.id, stage: saved.status === "NEEDS_CLARIFICATION" ? "0" : "1", generation_states: codes.join(","), returnToGeneration: "true" });
+                    }}
                     map={map.data}
                     pending={generation.isPending}
                     savedCount={currentTests.length}

@@ -38,7 +38,7 @@ import {
 } from "lucide-react";
 import { api, ApiError } from "../../api/client";
 import { Button, ErrorState } from "../../components/ui";
-import type { FormTestFixture, ImportSummary, ProjectAccount } from "../../types/api";
+import type { ImportSummary, ProjectAccount } from "../../types/api";
 
 /* ── helpers ──────────────────────────────────────────────────── */
 
@@ -551,12 +551,6 @@ export function ApplicationAccess({
   const [importResult, setImportResult] = useState<ImportSummary | null>(null);
   const [importError, setImportError] = useState("");
   const [templateBusy, setTemplateBusy] = useState(false);
-  const [showFormData, setShowFormData] = useState(false);
-  const formData = useQuery({
-    queryKey: ["project-data", projectId, "fixtures"],
-    queryFn: () => api.formTestData(projectId),
-    enabled: showFormData,
-  });
   const importAccounts = useMutation({
     mutationFn: (file: File) => api.importAccounts(projectId, file),
     onSuccess: async (result) => {
@@ -691,43 +685,10 @@ export function ApplicationAccess({
             </div>
           )}
 
-          <section className="saved-form-data">
-            <button
-              type="button"
-              className="saved-form-data-toggle"
-              aria-expanded={showFormData}
-              onClick={() => setShowFormData((value) => !value)}
-            >
-              <span>Saved form test data</span>
-              <span className="badge">{formData.data?.length ?? "View"}</span>
-              {showFormData ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
-            </button>
-            {showFormData && (
-              <div className="saved-form-data-content">
-                {formData.isPending && <p className="field-hint">Loading saved form data…</p>}
-                {formData.error && <ErrorState error={formData.error} retry={() => void formData.refetch()} />}
-                {formData.isSuccess && formData.data.length === 0 && <p className="field-hint">No form test data has been added for this project yet.</p>}
-                {formData.data?.map((fixture: FormTestFixture) => (
-                  <details className="saved-form-fixture" key={fixture.id}>
-                    <summary>
-                      <strong>{fixture.label}</strong>
-                      <span>{fixture.form_group} · {fixture.test_type}</span>
-                    </summary>
-                    <dl>
-                      <dt>Field values</dt>
-                      <dd><pre>{JSON.stringify(fixture.test_data, null, 2)}</pre></dd>
-                      {fixture.expected_result && <><dt>Expected result</dt><dd>{fixture.expected_result}</dd></>}
-                      {fixture.test_case_id && <><dt>Assigned test case</dt><dd>{fixture.test_case_id}</dd></>}
-                      {!!fixture.tags.length && <><dt>Tags</dt><dd>{fixture.tags.join(", ")}</dd></>}
-                    </dl>
-                  </details>
-                ))}
-                <Button variant="secondary" onClick={() => navigate(`/projects/${projectId}/data`)}>
-                  View or manage form test data
-                </Button>
-              </div>
-            )}
-          </section>
+          <p className="field-hint">Business-form values are collected after test-case generation.</p>
+          <Button variant="secondary" onClick={() => navigate(`/projects/${projectId}/data?section=forms`)}>
+            Open form test data
+          </Button>
 
           {/* Account list */}
           {list.length > 0 && (

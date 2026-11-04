@@ -17,12 +17,14 @@ export default function Approvals({
   approval,
   onNext,
   onRevise,
+  returnToGeneration = false,
 }: {
   projectId: string;
   requirement: Requirement;
   approval?: Approval;
   onNext: () => void;
   onRevise: () => void;
+  returnToGeneration?: boolean;
 }) {
   const [name, setName] = useState("");
   const [reason, setReason] = useState("");
@@ -43,6 +45,7 @@ export default function Approvals({
           id: ac.id,
           text: ac.id === editingId ? text.trim() : ac.text,
         })),
+        r.version,
       ),
     () => {
       setEditedIds((prev) => new Set(prev).add(editingId!));
@@ -67,7 +70,7 @@ export default function Approvals({
         </div>
         <div>
           <h2>Make the intent official</h2>
-          <p>Review the requirement before discovery begins.</p>
+          <p>{returnToGeneration ? "Review the discovered feature requirements before generating tests." : "Review the requirement before discovery begins."}</p>
         </div>
         <StatusBadge status={r.status} />
       </div>
@@ -160,9 +163,9 @@ export default function Approvals({
       )}
       {r.status === "APPROVED" ? (
         <NextAction
-          title="Ready to explore"
-          description="Your requirement is approved. Discover the application to ground your tests in observed behavior."
-          label="Start discovery"
+          title={returnToGeneration ? "Ready to generate tests" : "Ready to explore"}
+          description={returnToGeneration ? "Your requirement is approved. Continue with the selected discovered pages." : "Your requirement is approved. Discover the application to ground your tests in observed behavior."}
+          label={returnToGeneration ? "Continue to test generation" : "Start discovery"}
           onClick={onNext}
         />
       ) : r.ambiguities.length ? (

@@ -1,6 +1,6 @@
 import { useMemo, useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { ArrowLeft, Check, KeyRound, Pencil, Plus, Search, Shield, Trash2, Upload, X } from "lucide-react";
 import { api, ApiError } from "../../api/client";
 import { Button, Card, DetailDrawer, ErrorState, LoadingState, PageHeader } from "../../components/ui";
@@ -15,8 +15,16 @@ const tagsOf = (value: string) => value.split(",").map((tag) => tag.trim()).filt
 export default function ProjectData({ projectId }: { projectId: string }) {
   const navigate = useNavigate();
   const client = useQueryClient();
-  const [section, setSection] = useState<Section>("forms");
-  const template = useQuery({ queryKey: ["smart-template", projectId], queryFn: ({ signal }) => api.smartTestDataTemplate(projectId, signal) });
+  const [params, setParams] = useSearchParams();
+  const section: Section = params.get("section") === "credentials" ? "credentials" : "forms";
+  const setSection = (next: Section) => {
+    setParams({ section: next });
+    setEditingAccount(false);
+    setEditingFixture(false);
+    setNotice("");
+    setImportResult(null);
+  };
+  const template = useQuery({ queryKey: ["smart-template", projectId], queryFn: ({ signal }) => api.smartTestDataTemplate(projectId, signal), enabled: section === "forms" });
   const [search, setSearch] = useState("");
   const [scenario, setScenario] = useState("all");
   const [editingAccount, setEditingAccount] = useState<ProjectAccount | null | false>(false);
@@ -51,9 +59,10 @@ export default function ProjectData({ projectId }: { projectId: string }) {
     const q = search.toLowerCase();
     return (!q || `${item.label} ${item.form_group} ${item.tags.join(" ")} ${item.expected_result || ""}`.toLowerCase().includes(q)) && (scenario === "all" || item.test_type === scenario);
   }), [fixtures.data, search, scenario]);
-  const visibleRequirements = (template.data?.rows || []).filter((row) => !missingOnly || row.missing);
-  const loading = project.isPending || accounts.isPending || fixtures.isPending || tests.isPending;
-  const error = project.error || accounts.error || fixtures.error || tests.error;
+  const formRequirements = (template.data?.rows || []).filter((row) => !row.runtime_only);
+  const visibleRequirements = formRequirements.filter((row) => !missingOnly || row.missing);
+  const loading = project.isPending || (section === "credentials" ? accounts.isPending : fixtures.isPending || tests.isPending);
+  const error = project.error || (section === "credentials" ? accounts.error : fixtures.error || tests.error);
 
   async function saveAccount(values: {
     role_name: string; username: string; password: string; is_default: boolean;
@@ -86,7 +95,7 @@ export default function ProjectData({ projectId }: { projectId: string }) {
 
   return (
     <Shell project={project.data?.name || "Project"} action={<button className="icon-button" onClick={() => navigate(`/projects/${projectId}?stage=2`)} title="Back to project" aria-label="Back to project"><ArrowLeft size={16} /></button>}>
-      <PageHeader eyebrow="PROJECT DATA" title="Login & Form Test Data" description="View and manage this project’s login accounts and form fixtures." action={<Button variant="secondary" onClick={() => navigate(`/projects/${projectId}?stage=2`)}><ArrowLeft size={15} /> Project workspace</Button>} />
+      <PageHeader eyebrow={section === "credentials" ? "APPLICATION ACCESS" : "TEST DATA"} title={section === "credentials" ? "Login credentials" : "Form test data"} description={section === "credentials" ? "Manage encrypted accounts used to sign in during discovery and execution." : "Supply business-form values for generated test cases. Login credentials are managed separately."} action={<Button variant="secondary" onClick={() => navigate(`/projects/${projectId}?stage=${section === "forms" ? 5 : 2}`)}><ArrowLeft size={15} /> Project workspace</Button>} />
       {loading ? <LoadingState label="Loading project data…" /> : error ? <ErrorState error={error} retry={() => { void project.refetch(); void accounts.refetch(); void fixtures.refetch(); void tests.refetch(); }} /> : <>
         <div className="data-tabs" role="tablist" aria-label="Project data sections">
           <button role="tab" aria-selected={section === "credentials"} className={section === "credentials" ? "active" : ""} onClick={() => { setSection("credentials"); setSearch(""); setScenario("all"); }}><KeyRound size={16} /> Login Credentials <span>{accounts.data?.length || 0}</span></button>
@@ -95,7 +104,7 @@ export default function ProjectData({ projectId }: { projectId: string }) {
         {section === "forms" && <Card>
           <h3>Test data requirements</h3>
           <label><input type="checkbox" checked={missingOnly} onChange={(event) => setMissingOnly(event.target.checked)} /> Show only missing values</label>
-          <p className="muted">Generate test cases first, then supply missing form values here or import Excel. Login credentials and runtime challenges are resolved separately.</p>
+          <p className="muted">Generate test cases first, then supply missing form values here or import Excel. Manage login credentials in Application Access; CAPTCHA and OTP are requested during sign-in when needed.</p>
           {template.error && <ErrorState error={template.error} />}
           {template.isPending ? <LoadingState label="Loading field requirements" /> : <div className="data-table-wrap"><table className="data-table"><thead><tr><th>Test case</th><th>Field</th><th>Scenario</th><th>Source</th><th>Action</th></tr></thead><tbody>
             {visibleRequirements.map((row) => <tr key={`${row.test_case_id}/${row.field_code}`}><td>{row.test_case_code}</td><td>{row.field_name}<small>{row.field_code} ? {row.field_type}</small></td><td>{row.scenario}</td><td>{row.source}</td><td>{row.runtime_only ? "Runtime input" : <Button variant="secondary" onClick={() => {
@@ -108,7 +117,7 @@ export default function ProjectData({ projectId }: { projectId: string }) {
                 setEditingFixture(null);
               }
             }}>{row.missing ? "Supply missing value" : "Review values"}</Button>}</td></tr>)}
-            {!visibleRequirements.length && <tr><td colSpan={5}>{template.data?.rows.length ? "No missing values in the mapped inputs. Uncheck ?Show only missing values? to review existing values and runtime fields." : template.data?.case_count ? "Generated cases have no mapped form-input requirements. Check that Feedback/form cases reference the discovered page and its controls." : "Generate test cases first. Discovered form fields become test-data requirements when cases reference them."}</td></tr>}
+            {!visibleRequirements.length && <tr><td colSpan={5}>{formRequirements.length ? "No missing values in the mapped inputs. Uncheck ?Show only missing values? to review existing values and runtime fields." : template.data?.case_count ? "Generated cases have no mapped form-input requirements. Check that Feedback/form cases reference the discovered page and its controls." : "Generate test cases first. Discovered form fields become test-data requirements when cases reference them."}</td></tr>}
           </tbody></table></div>}
         </Card>}
         <Card className="project-data-card">

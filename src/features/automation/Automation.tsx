@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowRight,
   ChevronRight,
@@ -653,12 +653,25 @@ function SuiteActions({
   const [includeCredentials, setIncludeCredentials] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [downloadError, setDownloadError] = useState("");
+  const [inputNotice, setInputNotice] = useState("");
+  const queryClient = useQueryClient();
 
   return (
     <>
-      <label><input type="checkbox" checked={includeCredentials} onChange={(event) => setIncludeCredentials(event.target.checked)} /> Include credentials in standalone package</label>
-      {includeCredentials && <p role="alert">Credential values will be readable to anyone with this package. Requires administrator enablement and an authenticated API key.</p>}
+      <p>The standalone ZIP contains credentials/login-credentials.json and credentials/test-data.json. It runs without the platform database.</p>
+      <label><input type="checkbox" checked={includeCredentials} onChange={(event) => setIncludeCredentials(event.target.checked)} /> Populate login JSON with saved credentials</label>
+      {includeCredentials && <p role="status">Saved login values are included in this private download when server export is enabled. Form test data is included from the current case assignments.</p>}
       <div className="actions">
+        <Button variant="secondary" busy={downloading} onClick={() => {
+          setDownloading(true); setDownloadError(""); setInputNotice("");
+          void beforeAccess().then(() => api.materializeAutomationInputs(projectId, result.generation_id, includeCredentials))
+            .then(() => {
+              setInputNotice("Current inputs saved to the generated credentials folder. Missing form values remain null.");
+              void queryClient.invalidateQueries({ queryKey: ["automation-form-inputs", projectId, result.generation_id] });
+            })
+            .catch(error => setDownloadError(error instanceof Error ? error.message : "Could not save standalone inputs."))
+            .finally(() => setDownloading(false));
+        }}>Refresh inputs in generated folder</Button>
         <Button
           variant="secondary"
           busy={downloading}
@@ -690,6 +703,7 @@ function SuiteActions({
               event.preventDefault();
               setDownloadError("");
               void beforeAccess()
+                .then(() => api.materializeAutomationInputs(projectId, result.generation_id, includeCredentials))
                 .then(() => {
                   window.location.href = result.vscode_url!;
                 })
@@ -706,6 +720,7 @@ function SuiteActions({
       </div>
 
       {downloadError && <ErrorState error={new Error(downloadError)} />}
+      {inputNotice && <p role="status">{inputNotice}</p>}
     </>
   );
 }
@@ -887,7 +902,11 @@ function Result({
   const [saveError, setSaveError] = useState<Error | null>(null);
   const [saveStatus, setSaveStatus] = useState("");
   const sourceKey = `${projectId}:${result.generation_id}:${file}`;
-  const source = editedSources[sourceKey] ?? preview ?? "";
+  const formInputs = useQuery({ queryKey: ["automation-form-inputs", projectId, result.generation_id],
+    queryFn: ({ signal }) => api.automationFormInputs(projectId, result.generation_id, signal) });
+  const formDataPath = "credentials/test-data.json";
+  const isFormData = file === formDataPath;
+  const source = isFormData ? formInputs.data?.content ?? "" : editedSources[sourceKey] ?? preview ?? "";
   const updateSource = (content: string) => {
     setEditedSources((current) => ({ ...current, [sourceKey]: content }));
     pendingSources.current[file] = { path: file, content };
@@ -1026,34 +1045,43 @@ function Result({
         {result.verification.detail ? ` ${result.verification.detail}` : ""}
       </p>
 
+      {formInputs.data && <div className="notice" role="status">
+        <strong>Form test data: {formInputs.data.saved_fields} saved inputs, {formInputs.data.missing_fields} missing inputs</strong>
+        <p>These values come from this suite’s current test-case assignments. Example JSON files are templates.</p>
+        <div className="actions"><Button variant="secondary" onClick={() => { void formInputs.refetch(); onFile(formDataPath); }}>View saved form inputs</Button>
+          <a className="button secondary" href={`/projects/${projectId}/data?section=forms`}>Manage form test data</a></div>
+        {isFormData && <p>This preview is read-only. Edit values in Form test data, then refresh the generated folder or download the ZIP again. Private input values are redacted here.</p>}
+      </div>}
+      {formInputs.error && <ErrorState error={formInputs.error} retry={() => { void formInputs.refetch(); }} />}
       <div className="automation-files">
         <div className="suite-explorer">
           <div className="suite-explorer-head">
             <FolderTree size={14} />
             Explorer
           </div>
-          <SuiteFiles paths={result.file_tree} file={file} onFile={onFile} />
+          <SuiteFiles paths={[...new Set([...result.file_tree, formDataPath])]} file={file} onFile={onFile} />
         </div>
 
         <textarea
           key={sourceKey}
           className="source-preview automation-source-editor"
           aria-label={
-            file ? `Edit source code for ${file}` : "Source code editor"
+            isFormData ? `Read-only form inputs for ${formDataPath}` : file ? `Edit source code for ${file}` : "Source code editor"
           }
           value={source}
           placeholder="Select a file to edit its source."
-          disabled={preview === undefined}
+          disabled={isFormData ? !formInputs.data : preview === undefined}
+          readOnly={isFormData}
           spellCheck={false}
           autoCapitalize="off"
           autoCorrect="off"
           wrap="off"
-          onChange={(event) => updateSource(event.target.value)}
+          onChange={(event) => { if (!isFormData) updateSource(event.target.value); }}
           onBlur={() => {
             void saveSources().catch(() => {});
           }}
           onKeyDown={(event) => {
-            if (event.key !== "Tab" || event.shiftKey) return;
+            if (isFormData || event.key !== "Tab" || event.shiftKey) return;
             event.preventDefault();
             const editor = event.currentTarget;
             const start = editor.selectionStart;

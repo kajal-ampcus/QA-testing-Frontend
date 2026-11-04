@@ -3,8 +3,8 @@ test("Automation sections collapse independently and preserve case selection", a
   page.on("pageerror", error => console.log("BROWSER ERROR", error.message));
   await page.route("**/api/v1/**", route => route.fulfill({json: route.request().url().includes("credentials") ? [] : {generations:[]}}));
   await page.goto("/tests/automation-sections-harness.html");
-  const about = page.getByRole("button", {name:/About 30 cases/});
-  const contact = page.getByRole("button", {name:/Contact 30 cases/});
+  const about = page.getByRole("button", {name:/About\s*30 cases/});
+  const contact = page.getByRole("button", {name:/Contact\s*30 cases/});
   await expect(about).toHaveAttribute("aria-expanded","false");
   await expect(page.getByText("Check item 0", {exact:false})).toHaveCount(0);
   await page.getByRole("checkbox",{name:"Select all cases in About"}).check();

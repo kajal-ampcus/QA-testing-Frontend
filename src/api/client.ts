@@ -108,6 +108,16 @@ export const api = {
   createRequirement: (id: string, raw_text: string) =>
     request<Requirement>(`/requirements/projects/${id}`, { raw_text }),
 
+  discoveryCoverage: (projectId: string, application_map_id: string, state_codes: string[], signal?: AbortSignal) =>
+    request<{ pages: Array<{ state_code: string; url: string; requirements: Array<{ id: string; title: string; status: string; match: string; form_behavior_missing?: boolean }> }> }>(
+      `/requirements/projects/${projectId}/discovery-coverage`, { application_map_id, state_codes }, signal),
+  discoveryRequirementDraft: (projectId: string, body: { application_map_id: string; state_codes: string[]; save?: boolean; exploratory?: boolean; behavioral?: boolean; success_outcome?: string; existing_requirement_id?: string; expected_version?: number; title?: string; description?: string; criteria?: string[] }) =>
+    request<{ draft?: { title: string; description: string; acceptance_criteria: Array<{ id: string; text: string }> }; requirement?: Requirement; requires_success_outcome?: boolean }>(
+      `/requirements/projects/${projectId}/discovery-draft`, body),
+  linkDiscoveryRequirement: (projectId: string, requirement: Requirement, application_map_id: string, state_codes: string[]) =>
+    request<Requirement>(`/requirements/projects/${projectId}/${requirement.id}/discovery-scope`,
+      { application_map_id, state_codes, expected_version: requirement.version }),
+
   revise: (id: string, raw_text: string) =>
     request<Requirement>(`/requirements/${id}/revisions`, { raw_text }),
 
@@ -124,9 +134,11 @@ export const api = {
   editAcceptanceCriteria: (
     requirementId: string,
     items: { id: string; text: string }[],
+    expected_version: number,
   ) =>
     request<Requirement>(`/requirements/${requirementId}/acceptance-criteria`, {
       items,
+      expected_version,
     }),
 
   // ── Approvals ─────────────────────────────────────────────
@@ -535,7 +547,8 @@ export const api = {
       { headers },
     );
     if (!response.ok) {
-      throw new ApiError(response.status, "Download failed. Please try again.");
+      const error = await response.json().catch(() => ({}));
+      throw new ApiError(response.status, typeof error.detail === "string" ? error.detail : "Download failed. Please try again.");
     }
     const blob = await response.blob();
     const url = URL.createObjectURL(blob);
@@ -545,6 +558,12 @@ export const api = {
     link.click();
     URL.revokeObjectURL(url);
   },
+
+  automationFormInputs: (projectId: string, generationId: string, signal?: AbortSignal) =>
+    request<{ path: string; content: string; saved_fields: number; missing_fields: number }>(
+      `/automation/projects/${projectId}/generations/${generationId}/form-inputs`, undefined, signal),
+  materializeAutomationInputs: (projectId: string, generationId: string, includeCredentials = false) =>
+    request<void>(`/automation/projects/${projectId}/generations/${generationId}/standalone-inputs?include_credentials=${includeCredentials}`, {}),
 
   executions: (id: string, signal?: AbortSignal) =>
     request<ExecutionList>(`/executions/projects/${id}`, undefined, signal),

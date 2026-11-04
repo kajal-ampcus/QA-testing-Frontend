@@ -34,6 +34,8 @@ import { human } from "../../utils/workflow";
 import { exportCompleteExcelReport } from "./exportExcel";
 import ReviewEditor from "./ReviewEditor";
 import { flowNameForCase, groupByFlow } from "../automation/flows";
+import TestDataReadiness from "../project-data/TestDataReadiness";
+import DiscoveryCoverage, { useDiscoveryCoverage } from "../requirements/DiscoveryCoverage";
 
 function savedCoverageGaps(
   requirement: Requirement | undefined,
@@ -443,6 +445,10 @@ export function Generate({
   result,
   onGenerate,
   onReview,
+  requirements,
+  initialStateCodes = [],
+  onChooseRequirement,
+  onRequirementPrepared,
 }: {
   requirement: Requirement;
   map: AppMap;
@@ -458,9 +464,13 @@ export function Generate({
     regenerate: boolean,
   ) => void;
   onReview: () => void;
+  requirements?: Requirement[];
+  initialStateCodes?: string[];
+  onChooseRequirement?: (id: string, codes: string[]) => void;
+  onRequirementPrepared?: (requirement: Requirement, codes: string[]) => void;
 }) {
-  const [scope, setScope] = useState<"all" | "ungenerated" | "selected">("all");
-  const [stateCodes, setStateCodes] = useState<string[]>([]);
+  const [scope, setScope] = useState<"all" | "ungenerated" | "selected">(initialStateCodes.length ? "selected" : "all");
+  const [stateCodes, setStateCodes] = useState<string[]>(initialStateCodes);
   const [regenerate, setRegenerate] = useState(false);
   const generatedFingerprints = new Set(
     map.project_test_generation_coverage?.[r.id] ?? [],
@@ -470,6 +480,9 @@ export function Generate({
   );
   const chosenStates = scope === "all" ? map.states : scope === "ungenerated" ? ungeneratedStates
     : map.states.filter((state) => stateCodes.includes(state.state_code));
+  const coverage = useDiscoveryCoverage(r.project_id, map.id, chosenStates.map(state => state.state_code));
+  const matchedCodes = (coverage.data?.pages ?? []).filter(page => page.requirements.some(req => req.id === r.id && req.status === "APPROVED"))
+    .map(page => page.state_code);
   return (
     <div className="two-column">
       <Card>
@@ -486,7 +499,7 @@ export function Generate({
           <div>
             <ListChecks size={24} />
             <strong>{r.req_code}</strong>
-            <span>Approved requirement</span>
+            <span>{r.status === "APPROVED" ? "Approved requirement" : "Approval required"}</span>
           </div>
           <ArrowRight size={18} />
           <div>
@@ -506,7 +519,7 @@ export function Generate({
             {
               title: "Approved requirement",
               detail: `${r.title} · Version ${r.version}`,
-              done: true,
+              done: r.status === "APPROVED",
             },
             {
               title: `${r.acceptance_criteria.length} acceptance criteria available`,
@@ -563,12 +576,15 @@ export function Generate({
           </label>
           {regenerate && <p className="notice">Replacement cases start as drafts and need review. Previous cases and their automation are retired when new valid cases are saved; their execution history is retained.</p>}
         </fieldset>
+        {chosenStates.length > 0 && <DiscoveryCoverage projectId={r.project_id} mapId={map.id} requirement={r}
+          requirements={requirements ?? [r]} coverage={coverage}
+          onChoose={onChooseRequirement ?? (() => {})} onPrepared={onRequirementPrepared ?? (() => {})} />}
         <div className="actions">
-          <Button disabled={chosenStates.length === 0} busy={pending}
+          <Button disabled={matchedCodes.length === 0 || !coverage.isSuccess || coverage.isFetching || r.status !== "APPROVED"} busy={pending}
             onClick={() => onGenerate(scope === "ungenerated" ? "ungenerated" : "all", [], [],
-              scope === "selected" ? stateCodes : [], regenerate)}>
+              matchedCodes, regenerate)}>
             <Sparkles size={16} />
-            {regenerate ? "Regenerate selected scope" : "Generate test cases"}
+            {matchedCodes.length < chosenStates.length ? `Generate for ${matchedCodes.length} matched pages` : regenerate ? "Regenerate selected scope" : "Generate test cases"}
           </Button>
           <Button variant="secondary" onClick={onReview}>Review saved test cases</Button>
         </div>
@@ -649,7 +665,8 @@ export default function TestCases({
   const [category, setCategory] = useState("");
   const [status, setStatus] = useState("");
   const [confidence, setConfidence] = useState("");
-  const [reqId, setReqId] = useState("");
+  const [reqId, setReqId] = useState(requirement?.id || "");
+  const [showEarlierMaps, setShowEarlierMaps] = useState(false);
   const [selected, setSelected] = useState<TestCase>();
   const [creating, setCreating] = useState(false);
   const [exportingExcel, setExportingExcel] = useState(false);
@@ -663,7 +680,8 @@ export default function TestCases({
   const [importWarning, setImportWarning] = useState("");
   // Regeneration retains previous approved cases as audit history but removes
   // them from the active review set. The newly generated cases are DRAFT.
-  const activeTests = tests.filter((test) => test.status !== "OUTDATED");
+  const activeTests = tests.filter((test) => test.status !== "OUTDATED"
+    && (showEarlierMaps || !map || test.application_map_id === map.id));
   const reviewable = activeTests.filter((test) =>
     ["DRAFT", "PENDING_APPROVAL", "REJECTED"].includes(test.status),
   );
@@ -781,6 +799,10 @@ export default function TestCases({
   };
   return (
     <>
+      <TestDataReadiness projectId={projectId}
+        revision={tests.map((test) => `${test.id}:${test.current_version}:${test.status}`).sort().join("|")}
+        generation={result ? JSON.stringify(result) : undefined}
+        busy={!!generatingWholeGraph || !!completingCoverage} />
       <Card className="test-card">
         <div className="card-heading">
           <div className="heading-icon">
@@ -793,7 +815,7 @@ export default function TestCases({
             <p>Traceable scenarios. Clear intent. Ready for your review.</p>
           </div>
           <div className="actions">
-            <a className="button secondary" href={`/projects/${projectId}/data`}>Configure test data</a>
+            <a className="button secondary" href={`/projects/${projectId}/data?section=forms`}>Configure form test data</a>
             <Button
               onClick={() => {
                 setSelected(undefined);
@@ -845,6 +867,18 @@ export default function TestCases({
             )}
           </div>
         </div>
+        {requirement && <p className="muted">Current requirement: {requirement.req_code} — {requirement.title}. Map version {map?.version ?? "unknown"}.
+          Earlier map versions are available through the history filter.</p>}
+        <label><input type="checkbox" checked={showEarlierMaps} onChange={event => setShowEarlierMaps(event.target.checked)} /> Show cases from earlier application maps</label>
+        {requirement?.acceptance_criteria.length && requirement.acceptance_criteria.every(ac => ac.text.startsWith("Observed control "))
+          && map?.states.some(state => (requirement.domain_tags || []).includes(`discovery-route:${state.url_pattern.replace(/\/$/, "")}`)
+            && state.elements.some(element => element.role === "textbox")
+            && state.elements.some(element => element.input_type === "submit")
+            && !state.elements.some(element => element.input_type === "password")) ? <div className="notice" role="status">
+          <strong>These are form-display checks, not complete form testing</strong>
+          <p>The approved ACs have no functional submission or negative validation rules. Add and approve those rules to generate behavior tests.</p>
+          {onGenerateWholeGraph && <Button variant="secondary" onClick={() => onGenerateWholeGraph(false)}>Add functional and negative requirements</Button>}
+        </div> : null}
         {exportError && <p className="notice error">{exportError}</p>}
         {importExcel.error && <ErrorState error={importExcel.error} />}
         {importWarning && <div className="notice" role="alert"><strong>Duplicate test cases skipped</strong><p>{importWarning}</p></div>}
@@ -852,7 +886,7 @@ export default function TestCases({
         {!!wholeGraphError && <ErrorState error={wholeGraphError} />}
         {!!coverageError && <ErrorState error={coverageError} />}
         {(() => {
-          const gaps = savedCoverageGaps(requirement, activeTests);
+          const gaps = savedCoverageGaps(requirement, activeTests.filter(test => !map || test.application_map_id === map.id));
           const missingCount = gaps.uncovered.length + gaps.partial.length;
           const sessionNotes =
             !!result &&
@@ -865,14 +899,15 @@ export default function TestCases({
               <strong>Review the generated drafts below</strong>
               {gaps.uncovered.length > 0 && (
                 <p>
-                  {gaps.uncovered.length} acceptance criteria still have no
+                  Requirement-wide coverage: {gaps.uncovered.length} acceptance criteria still have no
                   test: {gaps.uncovered.join(", ")}
                 </p>
               )}
-              {result?.generation_gaps?.map((gap) => (
-                <p key={`${gap.ac_id}-${gap.status}`}>
-                  {gap.ac_id}: {human(gap.status)} — {gap.reason}
-                </p>
+              {[...new Set(result?.generation_gaps?.map(gap => gap.ac_id) ?? [])].map(acId => (
+                <details key={acId}><summary>{acId} — generation issues</summary>
+                  {[...new Set(result?.generation_gaps?.filter(gap => gap.ac_id === acId)
+                    .map(gap => `${human(gap.status)} — ${gap.reason}`) ?? [])].map(reason => <p key={reason}>{reason}</p>)}
+                </details>
               ))}
               {!!result?.needs_review_test_cases.length && (
                 <p>
