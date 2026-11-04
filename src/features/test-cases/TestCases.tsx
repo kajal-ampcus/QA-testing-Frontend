@@ -33,7 +33,7 @@ import {
 import { human } from "../../utils/workflow";
 import { exportCompleteExcelReport } from "./exportExcel";
 import ReviewEditor from "./ReviewEditor";
-import { flowNameForCase, groupByFlow } from "../automation/flows";
+import { groupByFlow } from "../automation/flows";
 import TestDataReadiness from "../project-data/TestDataReadiness";
 import DiscoveryCoverage, { useDiscoveryCoverage } from "../requirements/DiscoveryCoverage";
 
@@ -78,6 +78,7 @@ function lines(value: string) {
 }
 
 type ImportedCase = {
+  rowNumber: number;
   title: string;
   objective: string;
   expectedResult: string;
@@ -85,6 +86,10 @@ type ImportedCase = {
   preconditions: string[];
   stepNotes: string[];
   inferred: string[];
+  page?: string;
+  screen?: string;
+  module?: string;
+  url?: string;
 };
 
 const IMPORT_COLUMNS: Record<string, string[]> = {
@@ -95,6 +100,7 @@ const IMPORT_COLUMNS: Record<string, string[]> = {
   preconditions: ["preconditions", "precondition", "prerequisites"],
   steps: ["test steps", "steps", "step", "steps to reproduce", "action"],
   caseKey: ["test case", "test case id", "test case code", "tc code", "id"],
+  page: ["page", "page name"], screen: ["screen"], moduleName: ["module"], url: ["url", "route"],
 };
 
 function normaliseColumn(value: string) {
@@ -159,6 +165,7 @@ export function parseExcelTestCases(workbook: XLSX.WorkBook): ImportedCase[] {
     if (!suppliedExpected) inferred.push("Expected Result");
     const kind = readImportCell(row, "category").toUpperCase();
     return {
+      rowNumber: index + 2,
       title,
       objective,
       expectedResult,
@@ -166,6 +173,7 @@ export function parseExcelTestCases(workbook: XLSX.WorkBook): ImportedCase[] {
       preconditions: splitImportLines(readImportCell(row, "preconditions")),
       stepNotes,
       inferred,
+      page: readImportCell(row, "page"), screen: readImportCell(row, "screen"), module: readImportCell(row, "moduleName"), url: readImportCell(row, "url"),
     };
   });
 }
@@ -678,6 +686,7 @@ export default function TestCases({
   const importInput = useRef<HTMLInputElement>(null);
   const [importMessage, setImportMessage] = useState("");
   const [importWarning, setImportWarning] = useState("");
+  const [importPreview, setImportPreview] = useState<any>();
   // Regeneration retains previous approved cases as audit history but removes
   // them from the active review set. The newly generated cases are DRAFT.
   const activeTests = tests.filter((test) => test.status !== "OUTDATED"
@@ -695,43 +704,21 @@ export default function TestCases({
   const importExcel = useAction(projectId, async (file: File) => {
     setImportMessage("");
     setImportWarning("");
-    if (!map || !requirement?.acceptance_criteria.length) {
-      throw new Error("Select a requirement with acceptance criteria and complete discovery first.");
+    if (!map || !requirement) {
+      throw new Error("Select a requirement and complete discovery first.");
     }
     const workbook = XLSX.read(await file.arrayBuffer(), { type: "array" });
     const cases = parseExcelTestCases(workbook);
-    const acId = requirement.acceptance_criteria[0].id;
-    const startState = map.states[0]?.state_code;
-    let inferred = 0;
-    let imported = 0;
-    let skipped = 0;
-    for (const item of cases) {
-      const result = await api.createTest(projectId, {
-        requirement_id: requirement.id, application_map_id: map.id, title: item.title,
-        objective: item.objective, expected_result: item.expectedResult, category: item.category,
-        traceability: [acId], preconditions: item.preconditions,
-        step_notes: item.stepNotes, start_state_code: startState, skip_existing: true,
-      });
-      if (result.already_exists) {
-        skipped++;
-        continue;
-      }
-      imported++;
-      inferred += item.inferred.length;
-    }
-    return { imported, skipped, inferred };
-  }, ({ imported, skipped, inferred }) => {
-    setImportWarning(skipped
-      ? imported === 0
-        ? `All ${skipped} test cases in this file are already present. ${skipped} duplicates skipped. 0 test cases added.`
-        : `${skipped} of ${imported + skipped} test cases are already present and were skipped. ${imported} new test case${imported === 1 ? " was" : "s were"} added.`
-      : "");
-    setImportMessage(imported ?
-    `${imported} Excel test case${imported === 1 ? "" : "s"} imported as drafts.`
-      + (skipped ? ` ${skipped} test case${skipped === 1 ? " is" : "s are"} already present and ${skipped === 1 ? "was" : "were"} skipped.` : "")
-      + (inferred ? ` ${inferred} missing field${inferred === 1 ? " was" : "s were"} filled from the row context.` : "")
-      : "");
+    const preview = await api.previewTestImport(projectId, { requirement_id: requirement.id, application_map_id: map.id, filename: file.name,
+      rows: cases.map(({ rowNumber, expectedResult, stepNotes, ...item }) => ({ ...item, row_number: rowNumber, expected_result: expectedResult, step_notes: stepNotes })) });
+    setImportPreview({ ...preview, filename: file.name });
+    return null;
   });
+  const confirmImport = useAction(projectId, async () => {
+    if (!importPreview || !requirement || !map) return null;
+    return api.confirmTestImport(projectId, { requirement_id: requirement.id, application_map_id: map.id, filename: importPreview.filename,
+      rows: importPreview.rows.map((item: any) => ({ ...item.row, state_code: item.state_code ?? item.detected_state_code })) });
+  }, (result) => { const imported = result?.results.filter((r: any) => r.status === "imported").length ?? 0; setImportMessage(`${imported} Excel test case${imported === 1 ? "" : "s"} imported as drafts.`); setImportPreview(undefined); });
   const bulkReview = useAction(
     projectId,
     () =>
@@ -762,7 +749,7 @@ export default function TestCases({
   );
   const req = requirements.find((r) => r.id === selected?.requirement_id);
   const flowGroups = useMemo(
-    () => groupByFlow(filtered, (test) => flowNameForCase(test, map)),
+    () => groupByFlow(filtered, (test) => test.primary_state_code ? (map?.states.find(state => state.state_code === test.primary_state_code)?.url_pattern || test.primary_state_code) : "Unmapped"),
     [filtered, map],
   );
   const allFlowsExpanded = flowGroups.length > 0 && flowGroups.every((group) => expandedFlows.has(group.flow));
@@ -829,7 +816,7 @@ export default function TestCases({
             <input ref={importInput} type="file" accept=".xlsx,.xls" className="sr-only"
               onChange={(event) => { const file = event.target.files?.[0]; if (file) importExcel.mutate(file); event.currentTarget.value = ""; }} />
             <Button variant="secondary" onClick={() => importInput.current?.click()} busy={importExcel.isPending}
-              disabled={!map || !requirement?.acceptance_criteria.length}>
+              disabled={!map || !requirement}>
               <Plus size={15} /> Import Excel
             </Button>
             <Button
@@ -883,6 +870,11 @@ export default function TestCases({
         {importExcel.error && <ErrorState error={importExcel.error} />}
         {importWarning && <div className="notice" role="alert"><strong>Duplicate test cases skipped</strong><p>{importWarning}</p></div>}
         {importMessage && <p className="notice success">{importMessage}</p>}
+        {importPreview && <Card><h3>Review Excel page mapping</h3>
+          <p>Confirm the discovered page for each included case. Unmapped rows will not be saved.</p>
+          <div className="table-scroll"><table><thead><tr><th>Row</th><th>Test case</th><th>Detected page</th><th>Confidence</th><th>Include</th></tr></thead><tbody>
+            {importPreview.rows.map((item: any, index: number) => <tr key={item.row.row_number}><td>{item.row.row_number}</td><td>{item.row.title}</td><td><select value={item.state_code ?? item.detected_state_code ?? ""} onChange={e => setImportPreview((current: any) => ({...current, rows: current.rows.map((row: any, i: number) => i === index ? {...row, state_code: e.target.value || null} : row)}))}><option value="">Unmapped</option>{importPreview.pages.map((page: any) => <option key={page.state_code} value={page.state_code}>{page.page_name}</option>)}</select></td><td>{item.confidence}%{item.ambiguous ? " (ambiguous)" : ""}</td><td><input type="checkbox" checked={item.row.include !== false} onChange={e => setImportPreview((current: any) => ({...current, rows: current.rows.map((row: any, i: number) => i === index ? {...row, row: {...row.row, include: e.target.checked}} : row)}))} /></td></tr>)}
+          </tbody></table></div><Button onClick={() => confirmImport.mutate()} busy={confirmImport.isPending}>Confirm import</Button> <Button variant="secondary" onClick={() => setImportPreview(undefined)}>Cancel</Button>{confirmImport.error && <ErrorState error={confirmImport.error} />}</Card>}
         {!!wholeGraphError && <ErrorState error={wholeGraphError} />}
         {!!coverageError && <ErrorState error={coverageError} />}
         {(() => {

@@ -289,6 +289,8 @@ export interface TestCase {
   status: string;
   current_version: number;
   credential_ref?: string | null;
+  primary_state_code?: string | null;
+  source?: "excel_import" | "ai_generated" | "manual" | "Unknown";
   /** Which role this test case was generated for */
   role_name?: string | null;
   current: {

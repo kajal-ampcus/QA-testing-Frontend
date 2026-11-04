@@ -475,6 +475,11 @@ export const api = {
     },
   ) => request<TestCase & { already_exists?: boolean }>(`/test-cases/projects/${projectId}`, body),
 
+  previewTestImport: (projectId: string, body: Record<string, unknown>) =>
+    request<{ application_map_id: string; pages: { state_code: string; page_name: string }[]; rows: Array<Record<string, any>> }>(`/test-cases/projects/${projectId}/import-preview`, body),
+  confirmTestImport: (projectId: string, body: Record<string, unknown>) =>
+    request<{ results: Array<{ row_number: number; status: string; error?: string }> }>(`/test-cases/projects/${projectId}/import-confirm`, body),
+
   reviseTest: (
     testCaseId: string,
     body: {
