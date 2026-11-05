@@ -16,6 +16,7 @@ import {
   EmptyState,
 } from "../components/ui";
 import type { Requirement } from "../types/api";
+import { generateBatch, type GenerationTarget } from "../features/test-cases/generationBatch";
 const Requirements = lazy(
   () => import("../features/requirements/Requirements"),
 );
@@ -180,10 +181,11 @@ export default function Workspace({ id }: { id: string }) {
       branchKeys?: string[];
       stateCodes?: string[];
       regenerate?: boolean;
+      targets?: GenerationTarget[];
     }) =>
-      api.generate(
+      generateBatch(selection.targets ?? [{ requirementId: r!.id, stateCodes: selection.stateCodes ?? [] }], target => api.generate(
         id,
-        r!.id,
+        target.requirementId,
         map.data!.id,
         undefined,
         selection.scope,
@@ -191,9 +193,13 @@ export default function Workspace({ id }: { id: string }) {
         selection.moduleIds,
         selection.branchKeys,
         selection.regenerate,
-        selection.stateCodes,
-      ),
-    () => navigateStage(5),
+        target.stateCodes,
+      )),
+    data => setParams(p => {
+      p.set("stage", "5");
+      p.set("generation_requirements", (data.requirement_ids ?? []).join(","));
+      return p;
+    }),
   );
   const coverageGeneration = useAction(
     id,
@@ -461,10 +467,14 @@ export default function Workspace({ id }: { id: string }) {
                     savedCount={currentTests.length}
                     error={generation.error}
                     result={generation.data}
-                    onGenerate={(scope, areaIds, moduleIds, stateCodes, regenerate) =>
-                      generation.mutate({ scope, areaIds, moduleIds, stateCodes, regenerate })
+                    onGenerate={(scope, areaIds, moduleIds, stateCodes, regenerate, targets) =>
+                      generation.mutate({ scope, areaIds, moduleIds, stateCodes, regenerate, targets })
                     }
-                    onReview={() => navigateStage(5)}
+                    onReview={requirementIds => setParams(p => {
+                      p.set("stage", "5");
+                      p.set("generation_requirements", (requirementIds ?? [r.id]).join(","));
+                      return p;
+                    })}
                   />
                 )}{" "}
               {stage === 5 && (
@@ -483,7 +493,7 @@ export default function Workspace({ id }: { id: string }) {
                   wholeGraphError={generation.error}
                   onGenerateWholeGraph={() => navigateStage(4)}
                   approvals={approvals.data || []}
-                  requirement={r}
+                  requirement={(params.get("generation_requirements") || "").split(",").filter(Boolean).length > 1 ? undefined : r}
                   onNext={() => navigateStage(6)}
                 />
               )}{" "}

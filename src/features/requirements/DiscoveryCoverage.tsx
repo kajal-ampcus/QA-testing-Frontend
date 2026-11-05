@@ -12,14 +12,15 @@ export function useDiscoveryCoverage(projectId: string, mapId: string, codes: st
 
 export default function DiscoveryCoverage({ projectId, mapId, requirement, requirements, coverage, onChoose, onPrepared }: {
   projectId: string; mapId: string; requirement: Requirement; requirements: Requirement[];
-  coverage: ReturnType<typeof useDiscoveryCoverage>;
+  coverage: Pick<ReturnType<typeof useDiscoveryCoverage>, "data" | "isError" | "error" | "refetch" | "isPending">;
   onChoose: (id: string, codes: string[]) => void;
   onPrepared: (requirement: Requirement, codes: string[]) => void;
 }) {
   const [draft, setDraft] = useState<{ title: string; description: string; criteria: string; exploratory: boolean; codes: string[]; upgrade: boolean; requiresOutcome: boolean; outcome: string }>();
   const [linkId, setLinkId] = useState("");
   const pages = coverage.data?.pages ?? [];
-  const uncovered = pages.filter(page => !page.requirements.some(req => req.id === requirement.id && req.status === "APPROVED"));
+  const approvedIds = new Set(requirements.filter(req => req.status === "APPROVED").map(req => req.id));
+  const uncovered = pages.filter(page => !page.requirements.some(req => approvedIds.has(req.id) && req.status === "APPROVED"));
   const codes = uncovered.map(page => page.state_code);
   const behaviorPages = pages.filter(page => page.requirements.some(req => req.id === requirement.id && req.form_behavior_missing));
   const preview = useAction(projectId, async ({ exploratory, upgrade = false }: { exploratory: boolean; upgrade?: boolean }) => {
@@ -48,8 +49,14 @@ export default function DiscoveryCoverage({ projectId, mapId, requirement, requi
   if (coverage.isError) return <ErrorState error={coverage.error} retry={() => { void coverage.refetch(); }} />;
   if (coverage.isPending) return <p role="status">Checking requirement coverage…</p>;
   return <section className="notice" aria-label="Requirement coverage">
-    <strong>Requirement scope: {requirement.req_code} — {requirement.title}</strong>
-    <p>{pages.length - uncovered.length} selected pages match this approved requirement; {uncovered.length} need a requirement link or review.</p>
+    <strong>Generation scope: selected pages and their approved requirements</strong>
+    <p>{pages.length - uncovered.length} selected pages match approved requirements; {uncovered.length} need a requirement link or review.</p>
+    <p>Matching approved requirements are reused together. Adding a new requirement keeps the existing requirements and their acceptance criteria.</p>
+    <ul aria-label="Approved requirement assignments">{pages.filter(page => page.requirements.some(req => approvedIds.has(req.id) && req.status === "APPROVED")).map(page =>
+      <li key={page.state_code}>{page.url} — {page.requirements.filter(req => approvedIds.has(req.id) && req.status === "APPROVED").map(req => {
+        const saved = requirements.find(item => item.id === req.id)!;
+        return `${saved.req_code}: ${saved.title}`;
+      }).join("; ")}</li>)}</ul>
     <p className="muted">Suggested matches use page names and headings. Review the ACs before generation; matching a page does not prove every behavior is specified.</p>
     {behaviorPages.length > 0 && <div role="status"><strong>Form behavior coverage is missing</strong>
       <p>The approved ACs cover display only. Functional submission and negative validation rules have not been specified.</p>
@@ -57,7 +64,7 @@ export default function DiscoveryCoverage({ projectId, mapId, requirement, requi
       {!!preview.error && <ErrorState error={preview.error} />}
     </div>}
     {uncovered.length > 0 && <>
-      <ul>{uncovered.map(page => <li key={page.state_code}>{page.url} — no approved match for {requirement.req_code}
+      <ul>{uncovered.map(page => <li key={page.state_code}>{page.url} — no approved requirement match
         {page.requirements.filter(req => req.id !== requirement.id && requirements.some(item => item.id === req.id)).map(req => <Button key={req.id} variant="secondary"
           onClick={() => req.status === "APPROVED" ? onChoose(req.id, [page.state_code])
             : onPrepared(requirements.find(item => item.id === req.id)!, [page.state_code])}>

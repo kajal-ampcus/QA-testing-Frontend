@@ -36,6 +36,7 @@ import ReviewEditor from "./ReviewEditor";
 import { flowNameForCase, groupByFlow } from "../automation/flows";
 import TestDataReadiness from "../project-data/TestDataReadiness";
 import DiscoveryCoverage, { useDiscoveryCoverage } from "../requirements/DiscoveryCoverage";
+import { generationTargets, type GenerationTarget } from "./generationBatch";
 
 function savedCoverageGaps(
   requirement: Requirement | undefined,
@@ -462,8 +463,9 @@ export function Generate({
     moduleIds: string[],
     stateCodes: string[],
     regenerate: boolean,
+    targets?: GenerationTarget[],
   ) => void;
-  onReview: () => void;
+  onReview: (requirementIds?: string[]) => void;
   requirements?: Requirement[];
   initialStateCodes?: string[];
   onChooseRequirement?: (id: string, codes: string[]) => void;
@@ -472,17 +474,23 @@ export function Generate({
   const [scope, setScope] = useState<"all" | "ungenerated" | "selected">(initialStateCodes.length ? "selected" : "all");
   const [stateCodes, setStateCodes] = useState<string[]>(initialStateCodes);
   const [regenerate, setRegenerate] = useState(false);
-  const generatedFingerprints = new Set(
-    map.project_test_generation_coverage?.[r.id] ?? [],
-  );
+  const availableRequirements = requirements ?? [r];
+  const approvedIds = availableRequirements.filter(req => req.status === "APPROVED").map(req => req.id);
+  const mapCoverage = useDiscoveryCoverage(r.project_id, map.id, map.states.map(state => state.state_code));
+  const generatedFingerprints = new Set(map.states.filter(state => {
+    const matches = mapCoverage.data?.pages.find(page => page.state_code === state.state_code)?.requirements
+      .filter(req => req.status === "APPROVED" && approvedIds.includes(req.id)) ?? [];
+    return matches.length > 0 && matches.every(req => map.project_test_generation_coverage?.[req.id]?.includes(state.fingerprint));
+  }).map(state => state.fingerprint));
   const ungeneratedStates = map.states.filter(
     (state) => !generatedFingerprints.has(state.fingerprint),
   );
   const chosenStates = scope === "all" ? map.states : scope === "ungenerated" ? ungeneratedStates
     : map.states.filter((state) => stateCodes.includes(state.state_code));
-  const coverage = useDiscoveryCoverage(r.project_id, map.id, chosenStates.map(state => state.state_code));
-  const matchedCodes = (coverage.data?.pages ?? []).filter(page => page.requirements.some(req => req.id === r.id && req.status === "APPROVED"))
-    .map(page => page.state_code);
+  const coverage = { ...mapCoverage, data: mapCoverage.data ? { pages: mapCoverage.data.pages.filter(page => chosenStates.some(state => state.state_code === page.state_code)) } : undefined };
+  const targets = generationTargets(coverage.data?.pages ?? [], approvedIds).map(target => ({ ...target,
+    requirementCode: availableRequirements.find(req => req.id === target.requirementId)?.req_code }));
+  const matchedCodes = [...new Set(targets.flatMap(target => target.stateCodes))];
   return (
     <div className="two-column">
       <Card>
@@ -498,7 +506,7 @@ export function Generate({
         <div className="design-pipeline">
           <div>
             <ListChecks size={24} />
-            <strong>{r.req_code}</strong>
+            <strong>{targets.length > 1 ? `${targets.length} requirements` : r.req_code}</strong>
             <span>{r.status === "APPROVED" ? "Approved requirement" : "Approval required"}</span>
           </div>
           <ArrowRight size={18} />
@@ -578,15 +586,16 @@ export function Generate({
         </fieldset>
         {chosenStates.length > 0 && <DiscoveryCoverage projectId={r.project_id} mapId={map.id} requirement={r}
           requirements={requirements ?? [r]} coverage={coverage}
-          onChoose={onChooseRequirement ?? (() => {})} onPrepared={onRequirementPrepared ?? (() => {})} />}
+          onChoose={id => onChooseRequirement?.(id, chosenStates.map(state => state.state_code))}
+          onPrepared={saved => onRequirementPrepared?.(saved, chosenStates.map(state => state.state_code))} />}
         <div className="actions">
-          <Button disabled={matchedCodes.length === 0 || !coverage.isSuccess || coverage.isFetching || r.status !== "APPROVED"} busy={pending}
+          <Button disabled={matchedCodes.length === 0 || !coverage.isSuccess || coverage.isFetching} busy={pending}
             onClick={() => onGenerate(scope === "ungenerated" ? "ungenerated" : "all", [], [],
-              matchedCodes, regenerate)}>
+              matchedCodes, regenerate, targets)}>
             <Sparkles size={16} />
             {matchedCodes.length < chosenStates.length ? `Generate for ${matchedCodes.length} matched pages` : regenerate ? "Regenerate selected scope" : "Generate test cases"}
           </Button>
-          <Button variant="secondary" onClick={onReview}>Review saved test cases</Button>
+          <Button variant="secondary" onClick={() => onReview(targets.map(target => target.requirementId))}>Review saved test cases</Button>
         </div>
         {map.status === "PARTIAL" && (
           <div className="notice">
@@ -606,7 +615,7 @@ export function Generate({
               {result.ac_evidence.map((item) => <p key={item.ac_id}>{item.ac_id}: {item.status} — {item.reason}</p>)}
             </details>}
             {result.validation_issues?.map((issue, index) => <p key={index}>{issue}</p>)}
-            <Button onClick={onReview}>
+            <Button onClick={() => onReview(targets.map(target => target.requirementId))}>
               Review test cases <ArrowRight size={16} />
             </Button>
           </div>

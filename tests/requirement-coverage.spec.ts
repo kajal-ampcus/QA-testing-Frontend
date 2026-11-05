@@ -37,7 +37,7 @@ test("discovered Feedback draft can be reviewed, edited and sent to approval", a
   const body = (await request).postDataJSON();
   expect(body.state_codes).toEqual(["S2"]);
   expect(body.title).toBe("Feedback form requirements");
-  await expect(page.locator("output")).toHaveText("Approval: feedback S2");
+  await expect(page.locator("output")).toHaveText("Approval: feedback S1,S2");
 });
 
 test("linking existing requirements requests review of a new version", async ({ page }) => {
@@ -45,7 +45,33 @@ test("linking existing requirements requests review of a new version", async ({ 
   const request = page.waitForRequest(req => req.url().endsWith("discovery-scope"));
   await page.getByRole("button", { name: "Link pages and review" }).click();
   expect((await request).postDataJSON()).toEqual({ application_map_id: "map", state_codes: ["S2"], expected_version: 1 });
-  await expect(page.locator("output")).toHaveText("Approval: login S2");
+  await expect(page.locator("output")).toHaveText("Approval: login S1,S2");
+});
+
+test("approved Login and Feedback remain available together and generate in one action", async ({ page }) => {
+  await page.route("**/api/v1/requirements/projects/p/discovery-coverage", route => route.fulfill({ json: { pages: [
+    { state_code: "S1", url: "/en/login", requirements: [{ id: "login", status: "APPROVED", match: "linked" }] },
+    { state_code: "S2", url: "/en/feedback", requirements: [{ id: "feedback", status: "APPROVED", match: "linked" }] },
+    { state_code: "S3", url: "/en", requirements: [{ id: "login", status: "APPROVED", match: "linked" }] },
+  ] } }));
+  const requests: Array<{ requirement_id: string; selected_state_codes: string[] }> = [];
+  await page.route("**/api/v1/test-cases/projects/p/generate", route => {
+    requests.push(route.request().postDataJSON());
+    return route.fulfill({ json: { generated: 1, test_cases: [], uncovered_acs: [], partial_pairing_acs: [], needs_review_test_cases: [] } });
+  });
+  await page.goto("/tests/requirement-coverage-harness.html?multi=1");
+  const assignments = page.getByRole("list", { name: "Approved requirement assignments" });
+  await expect(assignments).toContainText("REQ-001: Login");
+  await expect(assignments).toContainText("REQ-002: Feedback");
+  await expect(page.getByRole("button", { name: "Draft requirements from discovery" })).toHaveCount(0);
+  await page.getByRole("button", { name: "Review saved test cases" }).click();
+  await expect(page.locator("output")).toHaveText("Review: login,feedback");
+  await page.getByRole("button", { name: "Generate test cases", exact: true }).click();
+  await expect(page.locator("output")).toHaveText("Generated: 2 cases across 2 requirements");
+  expect(requests.map(({ requirement_id, selected_state_codes }) => ({ requirement_id, selected_state_codes }))).toEqual([
+    { requirement_id: "login", selected_state_codes: ["S1", "S3"] },
+    { requirement_id: "feedback", selected_state_codes: ["S2"] },
+  ]);
 });
 
 test("visibility-only Feedback requires outcome review before a functional revision can be saved", async ({ page }) => {

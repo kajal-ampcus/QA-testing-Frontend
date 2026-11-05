@@ -318,6 +318,7 @@ export interface TestCase {
 }
 
 export interface Generation {
+  requirement_ids?: string[];
   generated: number;
   outcome?: "generated" | "validation_rejected" | "no_supported_cases";
   message?: string;
