@@ -587,6 +587,12 @@ export const api = {
       signal,
     ),
 
+  retryFailedExecution: (projectId: string, runId: string) =>
+    request<{ job_id: string; run_id: string; status: string }>(
+      `/executions/projects/${projectId}/runs/${runId}/retry-failed`,
+      {},
+    ),
+
   executionJob: (jobId: string, signal?: AbortSignal) =>
     request<ExecutionJob>(
       `/executions/jobs/${encodeURIComponent(jobId)}`,

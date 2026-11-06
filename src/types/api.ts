@@ -501,6 +501,7 @@ export interface ExecutionRun {
   finished_at: string | null;
   created_at: string | null;
   result_count: number;
+  retry_of_run_id?: string | null;
   results?: ExecutionResult[];
 }
 

@@ -357,11 +357,11 @@ export default function Automation({
                 Automation <span className="count">{eligible.length}</span>
               </h2>
 
-              <p>
+              {/* <p>
                 Check the cases to write. A later generate adds only the new
                 cases and leaves the existing Playwright files in place. Cases
                 for the same page stay in one flow, such as Login or Dashboard.
-              </p>
+              </p> */}
               {!!result?.scripts.length &&
                 inSuite.size < result.scripts.length && (
                   <p>

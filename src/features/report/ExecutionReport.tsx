@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { Download, FileSpreadsheet } from "lucide-react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Download, FileSpreadsheet, RotateCcw } from "lucide-react";
 import { api } from "../../api/client";
 import { finishedExecution } from "../../utils/workflow";
 import {
@@ -18,19 +18,29 @@ import {
 } from "./exportExecutionExcel";
 
 export default function ExecutionReport({ projectId }: { projectId: string }) {
+  const queryClient = useQueryClient();
+  const [retryRunId, setRetryRunId] = useState("");
   const history = useQuery({
     queryKey: ["workspace", projectId, "executions"],
     queryFn: ({ signal }) => api.executions(projectId, signal),
+    refetchInterval: retryRunId ? 2_000 : false,
   });
   const finished = (history.data?.runs || []).filter((run) =>
     finishedExecution(run.status),
   );
   const [runId, setRunId] = useState("");
   const [exporting, setExporting] = useState(false);
+  const [retrying, setRetrying] = useState(false);
   const latestId = finished[0]?.id || "";
   useEffect(() => {
     if (!runId && latestId) setRunId(latestId);
   }, [runId, latestId]);
+  useEffect(() => {
+    if (retryRunId && finished.some((run) => run.id === retryRunId)) {
+      setRunId(retryRunId);
+      setRetryRunId("");
+    }
+  }, [finished, retryRunId]);
   const report = useQuery({
     queryKey: ["workspace", projectId, "execution-report", runId],
     queryFn: ({ signal }) => api.executionReport(projectId, runId, signal),
@@ -101,6 +111,24 @@ export default function ExecutionReport({ projectId }: { projectId: string }) {
                 suiteDetail={finished.find((run) => run.id === runId)?.detail || ""}
               />
               <div className="actions">
+                {(data.counts.failed > 0 || data.counts.error > 0) && (
+                  <Button
+                    variant="secondary"
+                    busy={retrying}
+                    onClick={() => {
+                      setRetrying(true);
+                      void api.retryFailedExecution(projectId, runId)
+                        .then((retry) => {
+                          setRetryRunId(retry.run_id);
+                          return queryClient.invalidateQueries({ queryKey: ["workspace", projectId, "executions"] });
+                        })
+                        .finally(() => setRetrying(false));
+                    }}
+                  >
+                    <RotateCcw size={15} />
+                    Re-run failed cases
+                  </Button>
+                )}
                 <Button
                   variant="secondary"
                   busy={exporting}
@@ -115,6 +143,7 @@ export default function ExecutionReport({ projectId }: { projectId: string }) {
                   Download Excel
                 </Button>
               </div>
+              {retryRunId && <p className="muted">Retry run queued. This report will switch to it when execution finishes.</p>}
               {data.results.length === 0 ? (
                 <p className="muted">This run has no result rows.</p>
               ) : (
