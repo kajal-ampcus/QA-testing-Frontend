@@ -3,10 +3,24 @@ import { test } from "node:test";
 import type { AppState } from "../../types/api";
 import {
   selectApplicationFlowTree,
+  generationStateName,
   type GraphRelationship,
 } from "./graphLayout.ts";
 
 const AUTH = "click(role=authentication,name='Log in')";
+
+test("generation picker distinguishes login and dashboard sharing the root URL", () => {
+  const login = { ...page("STATE-001", "/", "login", []), elements: [
+    { role: "heading", name: "Welcome back" },
+    { role: "textbox", name: "Password", input_type: "password" },
+    { role: "button", name: "Sign in" },
+  ] };
+  const dashboard = { ...page("STATE-002", "/", "dashboard", [AUTH]), elements: [
+    { role: "heading", name: "Dashboard" }, { role: "button", name: "Sign out" },
+  ] };
+  assert.equal(generationStateName(login), "Login");
+  assert.equal(generationStateName(dashboard), "Dashboard");
+});
 
 function page(
   code: string,

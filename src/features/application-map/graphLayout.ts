@@ -169,6 +169,22 @@ export function functionalStateName(state: AppState): string {
   }
 }
 
+/** A tester-facing name; accessible form evidence identifies a login screen
+ * even when the application uses the same URL before and after sign-in. */
+export function generationStateName(state: AppState): string {
+  const controls = state.elements ?? [];
+  const password = controls.some((element) =>
+    /password/i.test(`${element.name ?? ""} ${element.input_type ?? ""}`) &&
+    /^(textbox|input)$/i.test(String(element.role ?? "")),
+  );
+  const signIn = controls.some((element) =>
+    /^(button|link)$/i.test(String(element.role ?? "")) &&
+    /\b(log\s*in|sign\s*in|login)\b/i.test(String(element.name ?? "")),
+  );
+  if (password && signIn) return "Login";
+  return functionalStateName(state);
+}
+
 function elementIdentity(element: Record<string, unknown>): string {
   const locator =
     typeof element.locator === "object"

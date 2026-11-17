@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { Fragment, useMemo, useRef, useState } from "react";
 import * as XLSX from "xlsx";
 import {
   Sparkles,
@@ -9,6 +9,7 @@ import {
   ChevronRight,
   Plus,
   Pencil,
+  Trash2,
 } from "lucide-react";
 import type {
   Approval,
@@ -37,6 +38,8 @@ import { groupByFlow } from "../automation/flows";
 import TestDataReadiness from "../project-data/TestDataReadiness";
 import DiscoveryCoverage, { useDiscoveryCoverage } from "../requirements/DiscoveryCoverage";
 import { generationTargets, type GenerationTarget } from "./generationBatch";
+import { generationStateName } from "../application-map/graphLayout";
+import { casePage, caseReadiness, caseScenario, caseSource } from "./casePresentation";
 
 function savedCoverageGaps(
   requirement: Requirement | undefined,
@@ -190,9 +193,11 @@ function ReviewableRows({
   onToggle,
   onOpen,
   onEdit,
+  onDelete,
   onCancelEdit,
   onSaved,
   projectId,
+  map,
 }: {
   test: TestCase;
   requirementLabel: string;
@@ -204,34 +209,37 @@ function ReviewableRows({
   onToggle: (checked: boolean) => void;
   onOpen: () => void;
   onEdit: () => void;
+  onDelete: () => void;
   onCancelEdit: () => void;
   onSaved: () => void;
   projectId: string;
+  map?: AppMap | null;
 }) {
   const revise = useAction(
     projectId,
     (body: Parameters<typeof api.reviseTest>[1]) =>
       api.reviseTest(test.id, body),
   );
+  const readiness = caseReadiness(test, map);
   return (
     <>
       <tr className={editing ? "review-row-open" : ""}>
         {showSelect && (
           <td className="review-check-col">
-            {canReview ? (
               <input
                 type="checkbox"
                 aria-label={`Select ${test.tc_code}`}
                 checked={selected}
                 onChange={(event) => onToggle(event.target.checked)}
               />
-            ) : null}
           </td>
         )}
         <td className="test-title-col">
           <button className="test-title" onClick={onOpen}>
             <span className="mono">{test.tc_code}</span>
             <strong>{test.current.title}</strong>
+            <small>Scenario: {caseScenario(test, map)} · Source: {caseSource(test)}</small>
+            <small>{readiness.label}{readiness.issues.length ? `: ${readiness.issues.join("; ")}` : " — generate automation to check selectors and setup"}</small>
             {stale && (
               <small className="stale">
                 Earlier requirement or map version
@@ -267,6 +275,9 @@ function ReviewableRows({
           </small>
         </td>
         <td className="review-actions">
+          <button type="button" className="icon-button" aria-label={`Delete ${test.tc_code}`} onClick={onDelete}>
+            <Trash2 size={15} />
+          </button>
           {canReview && (
             <button
               className="icon-button"
@@ -561,13 +572,13 @@ export function Generate({
         )}
         {!!error && <ErrorState error={error} />}
         <fieldset className="generation-scope" disabled={pending}>
-          <legend>Choose graph states</legend>
+          <legend>Choose pages</legend>
           <label>
             Generate for
             <select value={scope} onChange={(event) => setScope(event.target.value as typeof scope)}>
-              <option value="all">Whole graph ({map.states.length} states)</option>
-              <option value="ungenerated">New graph part ({ungeneratedStates.length} states)</option>
-              <option value="selected">Selected states</option>
+              <option value="all">All pages ({map.states.length})</option>
+              <option value="ungenerated">New pages ({ungeneratedStates.length})</option>
+              <option value="selected">Selected pages</option>
             </select>
           </label>
           <div className="generation-state-list" role="group" aria-label="Graph states">
@@ -580,12 +591,12 @@ export function Generate({
                     setStateCodes(event.target.checked ? [...selected, state.state_code] : selected.filter((code) => code !== state.state_code));
                     setScope("selected");
                   }} />
-                <span><strong>{state.state_code}</strong><small>{state.url_pattern}</small></span>
+                <span><strong>{generationStateName(state)}</strong><small>{state.url_pattern} · {state.state_code}</small></span>
                 <small>{generatedFingerprints.has(state.fingerprint) ? "Generated" : "New"}</small>
               </label>
             ))}
           </div>
-          <p className="muted">{chosenStates.length} states selected. Uncheck states to generate for a specific section.</p>
+          <p className="muted">{chosenStates.length} pages selected. Uncheck pages to generate for a specific section.</p>
           <label className="generation-replace">
             <input type="checkbox" checked={regenerate} onChange={(event) => setRegenerate(event.target.checked)} />
             Replace existing cases for the selected states, including approved cases
@@ -618,6 +629,15 @@ export function Generate({
             <p>
               {result.message || "Review scenarios, confidence, and traceability before using them."}
             </p>
+            {result.coverage?.scenario_designed !== undefined && (
+              <div aria-label="Scenario coverage stages">
+                <p>Scenarios designed: {result.coverage.scenario_designed}</p>
+                <p>Manual review or test data needed: {result.coverage.manual_review_or_test_data_needed ?? 0}</p>
+                <p>Ready for automation: {result.coverage.ready_for_automation ?? 0}</p>
+                <p>Executed and passed: {result.coverage.executed_and_passed ?? "Not assessed"}</p>
+                {!!result.coverage.execution_not_assessed && <p>Execution not assessed: {result.coverage.execution_not_assessed}</p>}
+              </div>
+            )}
             {!!result.ac_evidence?.length && <details>
               <summary>Acceptance criteria: {result.ac_evidence.filter((item) => item.status === "partial").length} with scenarios, {result.ac_evidence.filter((item) => item.status === "deferred").length} deferred</summary>
               {result.ac_evidence.map((item) => <p key={item.ac_id}>{item.ac_id}: {item.status} — {item.reason}</p>)}
@@ -708,8 +728,13 @@ export default function TestCases({
   const remove = useAction(
     projectId,
     (testCase: TestCase) => api.deleteTest(testCase.id),
-    () => setSelected(undefined),
+    (_data) => { setSelected(undefined); setSelectedIds(new Set()); },
   );
+  const bulkDelete = useAction(projectId, (ids: string[]) => api.bulkDeleteTests(projectId, ids), () => {
+    setSelectedIds(new Set());
+    setSelected(undefined);
+    setEditingId(undefined);
+  });
   const importExcel = useAction(projectId, async (file: File) => {
     setImportMessage("");
     setImportWarning("");
@@ -758,7 +783,7 @@ export default function TestCases({
   );
   const req = requirements.find((r) => r.id === selected?.requirement_id);
   const flowGroups = useMemo(
-    () => groupByFlow(filtered, (test) => test.primary_state_code ? (map?.states.find(state => state.state_code === test.primary_state_code)?.url_pattern || test.primary_state_code) : "Unmapped"),
+    () => groupByFlow(filtered, (test) => casePage(test, map)),
     [filtered, map],
   );
   const allFlowsExpanded = flowGroups.length > 0 && flowGroups.every((group) => expandedFlows.has(group.flow));
@@ -999,25 +1024,25 @@ export default function TestCases({
             </button>
           </div>
         )}
-        {!!reviewable.length && (
+        {!!activeTests.length && (
           <div className="bulk-review-bar">
             <label className="review-select-all">
               <input
                 type="checkbox"
-                aria-label="Select all reviewable test cases"
+                aria-label="Select all test cases"
                 checked={
-                  reviewable.length > 0 &&
-                  reviewable.every((test) => selectedIds.has(test.id))
+                  activeTests.length > 0 &&
+                  activeTests.every((test) => selectedIds.has(test.id))
                 }
                 onChange={(event) => {
                   setSelectedIds(
                     event.target.checked
-                      ? new Set(reviewable.map((test) => test.id))
+                      ? new Set(activeTests.map((test) => test.id))
                       : new Set(),
                   );
                 }}
               />
-              {selectedReviewableIds.length} selected
+              {selectedIds.size} selected
             </label>
             <label>
               Reviewer name
@@ -1028,6 +1053,15 @@ export default function TestCases({
               />
             </label>
             {bulkReview.error && <ErrorState error={bulkReview.error} />}
+            {remove.error && <ErrorState error={remove.error} />}
+            {bulkDelete.error && <ErrorState error={bulkDelete.error} />}
+            <Button type="button" busy={bulkDelete.isPending} disabled={selectedIds.size === 0}
+              onClick={() => {
+                const ids = activeTests.filter((test) => selectedIds.has(test.id)).map((test) => test.id);
+                if (ids.length && window.confirm(`Delete ${ids.length} selected test case(s) from active test cases? Their automation will be blocked. Previous execution history will be retained.`)) bulkDelete.mutate(ids);
+              }}>
+              Delete selected ({selectedIds.size})
+            </Button>
             {bulkReview.data && <div role="status">
               {bulkReview.data.approved} approved, {bulkReview.data.skipped} already approved.
               {bulkReview.data.failed.map((item) => <p key={item.test_case_id}>{item.tc_code || item.test_case_id}: {item.error}</p>)}
@@ -1060,7 +1094,7 @@ export default function TestCases({
             <table>
               <thead>
                 <tr>
-                  {reviewable.length > 0 && (
+                  {activeTests.length > 0 && (
                     <th className="review-check-col">
                       <span className="sr-only">Select</span>
                     </th>
@@ -1076,16 +1110,14 @@ export default function TestCases({
                 </tr>
               </thead>
               {flowGroups.map((group, groupIndex) => {
-                  const groupReviewableIds = group.items
-                    .filter((test) => ["DRAFT", "PENDING_APPROVAL", "REJECTED"].includes(test.status))
-                    .map((test) => test.id);
+                  const groupReviewableIds = group.items.map((test) => test.id);
                   const groupSelected = groupReviewableIds.length > 0 &&
                     groupReviewableIds.every((id) => selectedIds.has(id));
                   const expanded = expandedFlows.has(group.flow);
                   const groupId = `test-flow-content-${groupIndex}`;
                   return <tbody key={group.flow}>
                   <tr className={`test-flow-row${expanded ? " is-expanded" : ""}`}>
-                    <td colSpan={reviewable.length > 0 ? 7 : 6}>
+                    <td colSpan={activeTests.length > 0 ? 7 : 6}>
                       <div className="test-flow-header">
                       {groupReviewableIds.length > 0 && (
                         <label className="test-flow-select">
@@ -1126,7 +1158,9 @@ export default function TestCases({
                       </div>
                     </td>
                   </tr>
-                  {expanded && group.items.map((t) => {
+                  {expanded && groupByFlow(group.items, (test) => caseScenario(test, map)).map((scenario) => <Fragment key={scenario.flow}>
+                  <tr className="test-scenario-row"><th scope="rowgroup" colSpan={activeTests.length > 0 ? 7 : 6}>{scenario.flow}</th></tr>
+                  {scenario.items.map((t) => {
                     const r = requirements.find((r) => r.id === t.requirement_id);
                     const stale =
                       r?.version !== t.requirement_version ||
@@ -1143,7 +1177,7 @@ export default function TestCases({
                         requirementLabel={r?.req_code || "Requirement"}
                         stale={stale}
                         canReview={canReview}
-                        showSelect={reviewable.length > 0}
+                        showSelect={activeTests.length > 0}
                         selected={selectedIds.has(t.id)}
                         editing={editingId === t.id}
                         onToggle={(checked) => {
@@ -1156,12 +1190,14 @@ export default function TestCases({
                         }}
                         onOpen={() => setSelected(t)}
                         onEdit={() => setEditingId(t.id)}
+                        onDelete={() => { if (window.confirm(`Delete ${t.tc_code} from active test cases? Its automation will be blocked. Previous execution history will be retained.`)) remove.mutate(t); }}
                         onCancelEdit={() => setEditingId(undefined)}
                         onSaved={() => setEditingId(undefined)}
                         projectId={projectId}
+                        map={map}
                       />
                     );
-                  })}
+                  })}</Fragment>)}
                 </tbody>;
                 })}
             </table>

@@ -135,6 +135,16 @@ export function InputRequests({
     queryKey: ["accounts", projectId],
     queryFn: () => api.accounts(projectId),
   });
+  const selectedAccount = (request: DiscoveryInputRequest) => {
+    if (account[request.id] !== undefined) return account[request.id];
+    if (request.kind !== "login" || request.validation_error) return "";
+    const matching = (accounts.data ?? []).filter(
+      (item) => item.login_group === request.login_group,
+    );
+    return matching.find((item) => item.credential_ref === request.credential_ref)?.credential_ref
+      ?? matching.find((item) => item.is_default)?.credential_ref
+      ?? (matching.length === 1 ? matching[0].credential_ref : "");
+  };
 
   if (visible.length === 0) return null;
 
@@ -156,7 +166,7 @@ export function InputRequests({
       const response = await api.submitDiscoveryInput(
         mapId,
         request.id,
-        account[request.id]
+        selectedAccount(request)
           ? []
           : request.fields
               .filter((field) => current[field.key])
@@ -167,7 +177,7 @@ export function InputRequests({
         {
           choice_id: choices[request.id],
           save_account: true,
-          credential_ref: account[request.id] || undefined,
+          credential_ref: selectedAccount(request) || undefined,
         },
       );
       setValues((previous) => ({ ...previous, [request.id]: {} }));
@@ -242,7 +252,7 @@ export function InputRequests({
                 <label className="field">
                   <span>Login group: {request.login_label || "Sign in"}</span>
                   <select
-                    value={account[request.id] || ""}
+                    value={selectedAccount(request)}
                     onChange={(event) =>
                       setAccount({
                         ...account,
@@ -250,7 +260,7 @@ export function InputRequests({
                       })
                     }
                   >
-                    <option value="">Enter credentials</option>
+                    <option value="">Enter new credentials</option>
                     {accounts.data
                       ?.filter(
                         (item) => item.login_group === request.login_group,
@@ -264,9 +274,12 @@ export function InputRequests({
                         </option>
                       ))}
                   </select>
+                  {(accounts.data ?? []).filter((item) => item.login_group === request.login_group).length > 1 && !selectedAccount(request) && (
+                    <span className="field-hint">Choose a saved account above to reuse it, or enter a new account below.</span>
+                  )}
                 </label>
               )}
-              {!account[request.id] &&
+              {!selectedAccount(request) &&
                 request.fields.map((field) => (
                   <label className="field" key={field.key}>
                     <span>
@@ -289,7 +302,7 @@ export function InputRequests({
                     />
                   </label>
                 ))}
-              {request.kind === "login" && !account[request.id] && (
+              {request.kind === "login" && !selectedAccount(request) && (
                 <p className="field-hint">
                   This test account is encrypted and stored with the project for
                   future discovery and automation. One-time codes are never

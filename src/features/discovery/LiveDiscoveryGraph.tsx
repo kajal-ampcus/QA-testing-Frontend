@@ -27,6 +27,7 @@ import {
 import { Globe, Wifi, Maximize2, Minimize2, Check, LoaderCircle, X } from "lucide-react";
 import "@xyflow/react/dist/style.css";
 import type { AppState, DiscoveryCheckpoint } from "../../types/api";
+import { useDiscoveryStream } from "./useDiscoveryStream";
 
 function LiveStateNode({
   data,
@@ -77,15 +78,19 @@ function ScanningPlaceholder({ phase }: { phase: string }) {
 }
 
 function LiveBrowserPane({
+  projectId,
   liveView,
   jobStatus,
   actionLog,
 }: {
+  projectId?: string;
   liveView?: DiscoveryCheckpoint["live_view"];
   jobStatus?: string;
   actionLog?: DiscoveryCheckpoint["action_log"];
 }) {
-  const screenshot = liveView?.screenshot_ref;
+  const stream = useDiscoveryStream(projectId);
+  const screenshot = stream?.image || liveView?.screenshot_ref;
+  const currentUrl = stream?.url || liveView?.url;
   const recentActions = [...(actionLog ?? [])].slice(-30).reverse();
   return (
     <div className="live-browser" aria-label="Live Chrome DevTools crawl">
@@ -93,15 +98,14 @@ function LiveBrowserPane({
         <span className="live-browser-dot" />
         <span className="live-browser-dot live-browser-dot--amber" />
         <span className="live-browser-dot live-browser-dot--green" />
-        <span className="live-browser-tool">Chrome DevTools</span>
-        <div className="live-browser-url" title={liveView?.url || ""}>
-          {liveView?.url || "Waiting for Chrome DevTools…"}
+        <span className="live-browser-tool">{stream ? "Chrome DevTools · Live" : "Chrome DevTools · Snapshot"}</span>
+        <div className="live-browser-url" title={currentUrl || ""}>
+          {currentUrl || "Waiting for Chrome DevTools…"}
         </div>
       </div>
       <div className="live-browser-stage">
         {screenshot ? (
           <img
-            key={screenshot}
             src={screenshot}
             alt={liveView?.label ? `Chrome DevTools visiting ${liveView.label}` : "Live Chrome DevTools crawl"}
             className="live-browser-frame"
@@ -117,7 +121,7 @@ function LiveBrowserPane({
         )}
       </div>
       <div className="live-browser-status">
-        {liveView?.label ? (
+        {stream ? <span>Live browser view · highlighted controls show automation actions</span> : liveView?.label ? (
           <>
             Now visiting <strong>{liveView.label}</strong>
             {liveView.action && liveView.action !== "ROOT" ? (
@@ -158,6 +162,7 @@ function LiveBrowserPane({
 }
 
 export default function LiveDiscoveryGraph({
+  projectId,
   states,
   jobStatus,
   elementCount,
@@ -165,6 +170,7 @@ export default function LiveDiscoveryGraph({
   liveView,
   actionLog,
 }: {
+  projectId?: string;
   states: AppState[];
   jobStatus?: string;
   stateCount: number;
@@ -343,7 +349,7 @@ export default function LiveDiscoveryGraph({
               {focusedPanel === "browser" ? "Split view" : "Full view"}
             </button>
           </div>
-          <LiveBrowserPane liveView={liveView} jobStatus={jobStatus} actionLog={actionLog} />
+          <LiveBrowserPane projectId={projectId} liveView={liveView} jobStatus={jobStatus} actionLog={actionLog} />
         </section>
         <div
           className="live-panel-divider"

@@ -506,6 +506,9 @@ export const api = {
   deleteTest: (testCaseId: string) =>
     request<void>(`/test-cases/${testCaseId}`, undefined, undefined, "DELETE"),
 
+  bulkDeleteTests: (projectId: string, test_case_ids: string[]) =>
+    request<{ deleted: number }>(`/test-cases/projects/${projectId}/bulk-delete`, { test_case_ids }),
+
   automation: (id: string, signal?: AbortSignal) =>
     request<AutomationList>(`/automation/projects/${id}`, undefined, signal),
 

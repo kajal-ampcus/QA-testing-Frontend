@@ -19,7 +19,7 @@ import type { ApplicationGraphData } from "../application-map/graphLayout";
 import { DiscoveryDiagnosticPanel } from "./DiscoveryDiagnosticPanel";
 import { loginFailureNotice } from "../application-map/ApplicationMap";
 import { DiscoveryPaths } from "./DiscoveryPaths";
-import { explorerRoles, readExplorerState, selectPaths } from "./explorerModel";
+import { explorerRoles, readExplorerState, selectPaths, selectablePagePaths } from "./explorerModel";
 import { RoleSelector } from "./RoleSelector";
 
 
@@ -92,7 +92,7 @@ export default function Discovery({
       choice: undefined,
     };
   const branches = (explorer.selections[role.id] ?? []).filter((key) =>
-    role.paths.some((path) => path.key === key),
+    selectablePagePaths(role.paths, map?.base_url || project.application_url || "").some((path) => path.key === key),
   );
   const updateExplorer = (value: typeof explorer) => {
     setStored({ key: storageKey, value });
@@ -449,6 +449,7 @@ export default function Discovery({
               }
             />
             <LiveDiscoveryGraph
+              projectId={project.id}
               flowGraph={
                 (
                   map?.discovery_checkpoint as

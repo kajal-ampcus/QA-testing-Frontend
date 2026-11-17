@@ -37,7 +37,14 @@ export function flowNameForCase(
   // can label a login case as another page, or lose it under Other.
   const sameMap = map && (!test?.application_map_id || test.application_map_id === map.id);
   const state = sameMap && stateCode ? map.states.find((item) => item.state_code === stateCode) : undefined;
-  if (state) return flowNameFromUrl(state.url_pattern);
+  if (state) {
+    // Root URLs can represent both login and the authenticated dashboard.
+    // Use the observed login controls rather than grouping both as Homepage.
+    const password = state.elements.some((element) => /^(textbox|input)$/i.test(String(element.role ?? "")) && /password/i.test(`${element.name ?? ""} ${element.input_type ?? ""}`));
+    const signIn = state.elements.some((element) => /^(button|link)$/i.test(String(element.role ?? "")) && /\b(log\s*in|sign\s*in|login)\b/i.test(String(element.name ?? "")));
+    if (password && signIn) return "Login";
+    return flowNameFromUrl(state.url_pattern);
+  }
   const explicitStart = test?.current.preconditions?.find((item) => /^Browser is on\s+\S+/i.test(item));
   const url = explicitStart?.replace(/^Browser is on\s+/i, "").trim();
   return flowNameFromUrl(url);

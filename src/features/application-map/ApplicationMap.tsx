@@ -196,6 +196,13 @@ export default function ApplicationMap({
   return (
     <>
       <Card className="map-card">
+        {map.termination_reason === "AWAITING_BRANCH_SELECTION" && (
+          <div className="notice" role="status">
+            <strong>Discovery is waiting for page selection.</strong>{" "}
+            This map shows the pages visited so far. Return to Discovery, select the saved paths for your account, and continue to map those pages.
+            <div className="actions"><button type="button" onClick={onRetry}>Select pages in Discovery</button></div>
+          </div>
+        )}
         <div className="card-heading">
           <div className="heading-icon">
             <Network size={20} />

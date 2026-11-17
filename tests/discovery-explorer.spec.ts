@@ -1,5 +1,26 @@
 import { test, expect } from "@playwright/test";
 
+test("login reuses a saved account and allows explicit credential entry", async ({ page }) => {
+  await page.route("**/api/v1/projects/p1/credentials", route => route.fulfill({ json: [{
+    credential_ref: "cred:saved", label: "Saved member", login_group: "member", is_default: true,
+  }] }));
+  let submitted: Record<string, unknown> | undefined;
+  await page.route("**/api/v1/application-maps/map1/input-requests/login", route => {
+    submitted = route.request().postDataJSON();
+    return route.fulfill({ json: { id: "login", status: "approved", selected_branches: [], credential_ref: "cred:saved" } });
+  });
+  page.on("dialog", dialog => dialog.accept());
+  await page.goto("/tests/discovery-explorer-harness.html?saved-login");
+  const select = page.getByRole("combobox");
+  await expect(select).toHaveValue("cred:saved");
+  await expect(page.getByLabel("Work email", { exact: false })).toHaveCount(0);
+  await select.selectOption("");
+  await expect(page.getByLabel("Work email", { exact: false })).toBeVisible();
+  await select.selectOption("cred:saved");
+  await page.getByRole("button", { name: /sign in/i }).click();
+  await expect.poll(() => submitted).toMatchObject({ credential_ref: "cred:saved", fields: [] });
+});
+
 test.beforeEach(async ({ page }) => {
   await page.route("**/api/v1/projects/p1/credentials", (route) =>
     route.fulfill({

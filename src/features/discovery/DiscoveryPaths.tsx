@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { ChevronRight, Search } from "lucide-react";
-import { observedForm, uniquePaths, type Branch } from "./explorerModel";
+import { observedForm, selectablePagePaths, type Branch } from "./explorerModel";
 import type { AppState } from "../../types/api";
 
 const stepLabel = (step: Branch["path"][number]) =>
@@ -47,7 +47,7 @@ export function DiscoveryPaths({
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("All");
   const [page, setPage] = useState(0);
-  const paths = uniquePaths(rawPaths);
+  const paths = selectablePagePaths(rawPaths, baseURL);
   const completed = paths.filter((path) => path.status === "completed").length;
   const matching = paths.filter(
     (path) =>
@@ -60,7 +60,7 @@ export function DiscoveryPaths({
   );
   const groups = new Map<string, { label: string; paths: Branch[] }>();
   const selectableGroups = new Map<string, string[]>();
-  const forms = matching.filter((branch) => branch.status === "completed").map((branch) => ({ branch, fields: observedForm(branch, states, baseURL) })).filter((form) => form.fields.length > 0);
+  const forms = matching.filter((branch) => branch.status === "completed" && branch.path.at(-1)?.role !== "authentication").map((branch) => ({ branch, fields: observedForm(branch, states, baseURL) })).filter((form) => form.fields.length > 0);
   for (const branch of matching) {
     if (branch.status === "completed") continue;
     const key = groupKey(branch);

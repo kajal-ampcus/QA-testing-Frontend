@@ -58,6 +58,25 @@ export function uniquePaths(paths: Branch[] = []): Branch[] {
   return unique.filter((branch) => !redundant.some((parent) => parent.key === branch.key)).map((path) => path.path.length ? path : { ...path, path: [{ role: "page", name: "Entry page" }] });
 }
 
+/** Hide saved page widgets from page selection; their controls remain on the page. */
+export function selectablePagePaths(paths: Branch[], baseURL: string): Branch[] {
+  const widgets = /^(?:status|rows per page|items per page|page size|full\s*screen|exit full\s*screen|previous page|next page|select date)$/i;
+  return uniquePaths(paths).filter((branch) => {
+    const step = branch.path.at(-1);
+    if (!step || branch.status === "completed" || step.role === "authentication") return true;
+    if (!step.url && widgets.test((step.name || "").trim())) return false;
+    // The authenticated landing page already covers its self-link.
+    if (step.role === "link" && step.url && branch.path.at(-2)?.role === "authentication") {
+      try {
+        const target = new URL(step.url, baseURL);
+        const base = new URL(baseURL);
+        if (target.origin === base.origin && target.pathname.replace(/\/$/, "") === base.pathname.replace(/\/$/, "") && !target.search && !target.hash) return false;
+      } catch { /* Keep paths with an unknown destination. */ }
+    }
+    return true;
+  });
+}
+
 export function explorerRoles(
   checkpoint: DiscoveryCheckpoint | null | undefined,
   accounts: ProjectAccount[],
@@ -142,7 +161,7 @@ export function explorerRoles(
       (ref !== "public" ? account?.role || account?.label : undefined);
     if (
       !label ||
-      roles.some((role) => normalize(role.label) === normalize(label))
+      roles.some((role) => role.id === ref)
     )
       continue;
     roles.push({

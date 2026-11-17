@@ -6,7 +6,21 @@ import {
   readExplorerState,
   selectPaths,
   uniquePaths,
+  selectablePagePaths,
 } from "./explorerModel.ts";
+
+test("page selection hides dashboard widgets but keeps real routes and page actions", () => {
+  const auth = { role: "authentication", name: "Sign in" };
+  const branch = (name: string, role = "button", url?: string) => ({ key: name, status: "available", path: [auth, { role, name, url }] });
+  const paths = selectablePagePaths([
+    branch("Status"), branch("Rows per page"), branch("Full screen"),
+    branch("Dashboard", "link", "https://sample.test/"),
+    branch("My Incentive", "link", "https://sample.test/my-incentive"),
+    branch("Rate revision", "link", "https://sample.test/rate-revision"),
+    branch("Settings"), branch("Create Rate Revision"),
+  ], "https://sample.test/");
+  assert.deepEqual(paths.map((path) => path.key), ["My Incentive", "Rate revision", "Settings", "Create Rate Revision"]);
+});
 import type { DiscoveryCheckpoint, ProjectAccount } from "../../types/api.ts";
 
 test("failed entry pages can be selected without changing the saved job", () => {
@@ -56,6 +70,21 @@ const checkpoint = {
     "cred:Kitchen": { jobs: [job("kitchen", "failed")] },
   },
 } as DiscoveryCheckpoint;
+
+test("accounts with the same label keep their own saved paths", () => {
+  const sameName = ["old", "current"].map((id) => ({
+    label: "Recruiter", role: "Recruiter", credential_ref: `cred:${id}`,
+    is_default: false, created_at: "",
+  }));
+  const map = {
+    configuration: { credential_ref: "cred:current", mode: "guided" },
+    jobs: [job("my-incentive")],
+    account_contexts: { "cred:old": { jobs: [job("old-page")] } },
+  } as unknown as DiscoveryCheckpoint;
+  const roles = explorerRoles(map, sameName);
+  assert.deepEqual(roles.find((role) => role.id === "cred:current")?.paths.map((path) => path.key), ["my-incentive"]);
+  assert.deepEqual(roles.find((role) => role.id === "cred:old")?.paths.map((path) => path.key), ["old-page"]);
+});
 
 test("active frontier overrides its saved snapshot without mixing account jobs", () => {
   const roles = explorerRoles(checkpoint, accounts);

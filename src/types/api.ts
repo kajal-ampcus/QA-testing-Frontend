@@ -207,6 +207,7 @@ export interface DiscoveryInputField {
 }
 
 export interface DiscoveryInputRequest {
+  credential_ref?: string | null;
   choices?: { id: string; label: string }[];
   login_group?: string;
   login_label?: string;
@@ -290,7 +291,7 @@ export interface TestCase {
   current_version: number;
   credential_ref?: string | null;
   primary_state_code?: string | null;
-  source?: "excel_import" | "ai_generated" | "manual" | "Unknown";
+  source?: string | null;
   /** Which role this test case was generated for */
   role_name?: string | null;
   current: {
@@ -322,6 +323,13 @@ export interface TestCase {
 export interface Generation {
   requirement_ids?: string[];
   generated: number;
+  coverage?: {
+    scenario_designed?: number;
+    manual_review_or_test_data_needed?: number;
+    ready_for_automation?: number;
+    executed_and_passed?: number | null;
+    execution_not_assessed?: number;
+  };
   outcome?: "generated" | "validation_rejected" | "no_supported_cases";
   message?: string;
   ac_evidence?: { ac_id: string; status: string; reason: string }[];

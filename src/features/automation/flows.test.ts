@@ -3,6 +3,15 @@ import test from "node:test";
 import type { TestCase } from "../../types/api";
 import { flowNameForCase, flowNameFromUrl, groupByFlow } from "./flows.ts";
 
+test("login cases at root URL are grouped as Login using their observed state", () => {
+  const map = { id: "map", states: [{ state_code: "STATE-001", url_pattern: "/", fingerprint: "login", reached_via: [], elements: [
+    { role: "textbox", name: "Password", input_type: "password" },
+    { role: "button", name: "Sign in" },
+  ] }] } as AppMap;
+  const testCase = { application_map_id: "map", current: { steps: [{ target: { state_code: "STATE-001" } }] } } as TestCase;
+  assert.equal(flowNameForCase(testCase, map), "Login");
+});
+
 test("login and dashboard urls share one flow name across locales", () => {
   assert.equal(flowNameFromUrl("/en/login"), "Login");
   assert.equal(flowNameFromUrl("/login"), "Login");

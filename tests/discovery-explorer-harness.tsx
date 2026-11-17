@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
 import ProjectData from "../src/features/project-data/ProjectData";
 import Discovery from "../src/features/discovery/Discovery";
+import { InputRequests } from "../src/features/discovery/InputRequests";
 import type { AppMap, Requirement } from "../src/types/api";
 import "../src/app/styles.css";
 
@@ -51,6 +52,12 @@ const map = {
 } satisfies AppMap;
 function Harness() {
   const [running, setRunning] = useState(false);
+  if (new URLSearchParams(location.search).has("saved-login")) return <InputRequests
+    mapId="map1" projectId="p1" running={false}
+    requests={[{ id: "login", kind: "login", status: "pending", login_group: "member",
+      fields: [{ key: "email", name: "Work email", role: "textbox", required: true }] }]}
+    onSubmitted={() => {}} onResumed={() => {}} onContinue={async () => {}}
+  />;
   const choosingLogin = new URLSearchParams(location.search).has("login-choice");
   let activeMap: AppMap = choosingLogin ? {
     ...map,
