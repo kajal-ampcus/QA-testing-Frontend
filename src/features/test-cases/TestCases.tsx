@@ -716,10 +716,16 @@ export default function TestCases({
   const [importMessage, setImportMessage] = useState("");
   const [importWarning, setImportWarning] = useState("");
   const [importPreview, setImportPreview] = useState<any>();
+  const [choosingImportRequirement, setChoosingImportRequirement] = useState(false);
+  const [importRequirementId, setImportRequirementId] = useState("");
+  const importRequirement = requirements.find(r => r.id === (importRequirementId || requirement?.id))
+    ?? (requirements.length === 1 ? requirements[0] : undefined);
   // Regeneration retains previous approved cases as audit history but removes
   // them from the active review set. The newly generated cases are DRAFT.
   const activeTests = tests.filter((test) => test.status !== "OUTDATED"
     && (showEarlierMaps || !map || test.application_map_id === map.id));
+  const hiddenEarlierTests = tests.filter(test => test.status !== "OUTDATED"
+    && map && test.application_map_id !== map.id && (!reqId || test.requirement_id === reqId));
   const reviewable = activeTests.filter((test) =>
     ["DRAFT", "PENDING_APPROVAL", "REJECTED"].includes(test.status),
   );
@@ -738,21 +744,39 @@ export default function TestCases({
   const importExcel = useAction(projectId, async (file: File) => {
     setImportMessage("");
     setImportWarning("");
-    if (!map || !requirement) {
+    if (!map || !importRequirement) {
       throw new Error("Select a requirement and complete discovery first.");
     }
     const workbook = XLSX.read(await file.arrayBuffer(), { type: "array" });
     const cases = parseExcelTestCases(workbook);
-    const preview = await api.previewTestImport(projectId, { requirement_id: requirement.id, application_map_id: map.id, filename: file.name,
+    const preview = await api.previewTestImport(projectId, { requirement_id: importRequirement.id, application_map_id: map.id, filename: file.name,
       rows: cases.map(({ rowNumber, expectedResult, stepNotes, ...item }) => ({ ...item, row_number: rowNumber, expected_result: expectedResult, step_notes: stepNotes })) });
-    setImportPreview({ ...preview, filename: file.name });
+    setImportPreview({ ...preview, filename: file.name, requirementId: importRequirement.id, mapId: map.id });
     return null;
   });
   const confirmImport = useAction(projectId, async () => {
-    if (!importPreview || !requirement || !map) return null;
-    return api.confirmTestImport(projectId, { requirement_id: requirement.id, application_map_id: map.id, filename: importPreview.filename,
+    if (!importPreview || !map || importPreview.mapId !== map.id) throw new Error("The application map changed. Import the file again.");
+    return api.confirmTestImport(projectId, { requirement_id: importPreview.requirementId, application_map_id: importPreview.mapId, filename: importPreview.filename,
       rows: importPreview.rows.map((item: any) => ({ ...item.row, state_code: item.state_code ?? item.detected_state_code })) });
-  }, (result) => { const imported = result?.results.filter((r: any) => r.status === "imported").length ?? 0; setImportMessage(`${imported} Excel test case${imported === 1 ? "" : "s"} imported as drafts.`); setImportPreview(undefined); });
+  }, (result) => {
+    const rows = result?.results ?? [];
+    const imported = rows.filter((r: any) => r.status === "imported").length;
+    const duplicates = rows.filter((r: any) => r.status === "duplicate").length;
+    const invalid = rows.filter((r: any) => r.status === "invalid").length;
+    const unmapped = rows.filter((r: any) => r.status === "unmapped").length;
+    const excluded = rows.filter((r: any) => r.status === "excluded").length;
+    const messages: string[] = [];
+    if (imported) messages.push(`${imported} Excel test case${imported === 1 ? " imported as a draft" : "s imported as drafts"}.`);
+    if (duplicates) messages.push(`${duplicates} Excel test case${duplicates === 1 ? " is" : "s are"} already present and ${duplicates === 1 ? "was" : "were"} skipped.`);
+    setImportMessage(messages.join(" "));
+    const warnings: string[] = [];
+    if (invalid) warnings.push(`${invalid} invalid row${invalid === 1 ? " was" : "s were"} not imported.`);
+    if (unmapped) warnings.push(`${unmapped} row${unmapped === 1 ? " needs" : "s need"} a page mapping before importing.`);
+    if (excluded) warnings.push(`${excluded} row${excluded === 1 ? " was" : "s were"} excluded from import.`);
+    if (!rows.length) warnings.push("No test cases were returned for this import.");
+    setImportWarning(warnings.join(" "));
+    setImportPreview(undefined);
+  });
   const bulkReview = useAction(
     projectId,
     () =>
@@ -824,6 +848,21 @@ export default function TestCases({
         revision={tests.map((test) => `${test.id}:${test.current_version}:${test.status}`).sort().join("|")}
         generation={result ? JSON.stringify(result) : undefined}
         busy={!!generatingWholeGraph || !!completingCoverage} />
+      {choosingImportRequirement && <DetailDrawer title="Import Excel" onClose={() => setChoosingImportRequirement(false)}>
+        {!map ? <p>Complete discovery before importing test cases.</p> : !requirements.length ? <p>Add a requirement before importing test cases.</p> : <>
+          <label>Import into requirement
+            <select aria-label="Import into requirement" value={importRequirement?.id ?? ""}
+              onChange={event => setImportRequirementId(event.target.value)}>
+              <option value="">Select a requirement</option>
+              {requirements.map(r => <option key={r.id} value={r.id}>{r.req_code}: {r.title}</option>)}
+            </select>
+          </label>
+          <Button disabled={!importRequirement} onClick={() => {
+            setChoosingImportRequirement(false);
+            importInput.current?.click();
+          }}>Choose Excel file</Button>
+        </>}
+      </DetailDrawer>}
       <Card className="test-card">
         <div className="card-heading">
           <div className="heading-icon">
@@ -849,8 +888,10 @@ export default function TestCases({
             </Button>
             <input ref={importInput} type="file" accept=".xlsx,.xls" className="sr-only"
               onChange={(event) => { const file = event.target.files?.[0]; if (file) importExcel.mutate(file); event.currentTarget.value = ""; }} />
-            <Button variant="secondary" onClick={() => importInput.current?.click()} busy={importExcel.isPending}
-              disabled={!map || !requirement}>
+            <Button variant="secondary" className="test-import-button" onClick={() => {
+              if (map && importRequirement) importInput.current?.click();
+              else setChoosingImportRequirement(true);
+            }} busy={importExcel.isPending} disabled={!!importPreview}>
               <Plus size={15} /> Import Excel
             </Button>
             <Button
@@ -888,9 +929,11 @@ export default function TestCases({
             )}
           </div>
         </div>
+        <div className="test-case-context">
         {requirement && <p className="muted">Current requirement: {requirement.req_code} — {requirement.title}. Map version {map?.version ?? "unknown"}.
           Earlier map versions are available through the history filter.</p>}
-        <label><input type="checkbox" checked={showEarlierMaps} onChange={event => setShowEarlierMaps(event.target.checked)} /> Show cases from earlier application maps</label>
+        <label className="test-history-filter"><input type="checkbox" checked={showEarlierMaps} onChange={event => setShowEarlierMaps(event.target.checked)} /><span>Show cases from earlier application maps</span></label>
+        </div>
         {requirement?.acceptance_criteria.length && requirement.acceptance_criteria.every(ac => ac.text.startsWith("Observed control "))
           && map?.states.some(state => (requirement.domain_tags || []).includes(`discovery-route:${state.url_pattern.replace(/\/$/, "")}`)
             && state.elements.some(element => element.role === "textbox")
@@ -902,7 +945,7 @@ export default function TestCases({
         </div> : null}
         {exportError && <p className="notice error">{exportError}</p>}
         {importExcel.error && <ErrorState error={importExcel.error} />}
-        {importWarning && <div className="notice" role="alert"><strong>Duplicate test cases skipped</strong><p>{importWarning}</p></div>}
+        {importWarning && <div className="notice" role="alert"><strong>Import details</strong><p>{importWarning}</p></div>}
         {importMessage && <p className="notice success">{importMessage}</p>}
         {importPreview && <Card><h3>Review Excel page mapping</h3>
           <p>Confirm the discovered page for each included case. Unmapped rows will not be saved.</p>
@@ -921,20 +964,23 @@ export default function TestCases({
               !!result.duplicates_skipped);
           if (!missingCount && !sessionNotes) return null;
           return (
-            <div className="notice">
-              <strong>Review the generated drafts below</strong>
+            <div className="notice test-generation-notes">
+              <strong>{missingCount ? "Coverage needs attention" : "Generation summary"}</strong>
               {gaps.uncovered.length > 0 && (
                 <p>
                   Requirement-wide coverage: {gaps.uncovered.length} acceptance criteria still have no
                   test: {gaps.uncovered.join(", ")}
                 </p>
               )}
+              {!!result?.generation_gaps?.length && <details className="test-generation-details">
+                <summary>View generation issues ({new Set(result.generation_gaps.map(gap => gap.ac_id)).size} criteria)</summary>
               {[...new Set(result?.generation_gaps?.map(gap => gap.ac_id) ?? [])].map(acId => (
                 <details key={acId}><summary>{acId} — generation issues</summary>
                   {[...new Set(result?.generation_gaps?.filter(gap => gap.ac_id === acId)
                     .map(gap => `${human(gap.status)} — ${gap.reason}`) ?? [])].map(reason => <p key={reason}>{reason}</p>)}
                 </details>
               ))}
+              </details>}
               {!!result?.needs_review_test_cases.length && (
                 <p>
                   {result.needs_review_test_cases.length} generated case
@@ -1081,12 +1127,16 @@ export default function TestCases({
             title={
               activeTests.length
                 ? "No tests match these filters"
-                : "Your test cases will appear here"
+                : !showEarlierMaps && hiddenEarlierTests.length
+                  ? "Your saved cases belong to an earlier application map"
+                  : "Your test cases will appear here"
             }
             description={
               activeTests.length
                 ? "Adjust your search or filters to see more scenarios."
-                : "Generate tests, or add a custom edge case from this page."
+                : !showEarlierMaps && hiddenEarlierTests.length
+                  ? `${hiddenEarlierTests.length} saved cases are hidden. Enable “Show cases from earlier application maps” to review them, or generate cases for the current map.`
+                  : "Generate tests, or add a custom edge case from this page."
             }
           />
         ) : (
@@ -1204,7 +1254,7 @@ export default function TestCases({
           </div>
         )}
         <div className="table-footer">
-          {filtered.length} of {tests.length} test cases
+          {filtered.length} of {activeTests.length} active test cases
           {reviewable.length > 0 ? (
             <span>Select, edit if needed, then approve the batch</span>
           ) : null}

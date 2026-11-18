@@ -50,6 +50,8 @@ export default function Discovery({
 }) {
   const queryClient = useQueryClient();
   const [url, setUrl] = useState(project.application_url || "");
+  const targetChanged = !!map &&
+    url.trim().replace(/\/$/, "") !== map.base_url.trim().replace(/\/$/, "");
   const [mode, setMode] = useState<"guided" | "complete">(
     map?.discovery_checkpoint &&
       map.discovery_checkpoint.configuration.mode !== "guided"
@@ -241,6 +243,9 @@ export default function Discovery({
     },
   );
   const requestRun = (keys: string[], scratch = false, selectedRole = role) => {
+    // A checkpoint belongs to its original website. An edited target must
+    // start a new map rather than resume navigation on the previous website.
+    scratch = scratch || targetChanged;
     if (!scratch && selectedRole.id !== role.id) {
       updateExplorer({ ...explorer, active: selectedRole.id });
     }
@@ -248,7 +253,7 @@ export default function Discovery({
       roleId: selectedRole.id,
       label: scratch || !map ? "Application entry" : selectedRole.label,
       ref: scratch || !map ? null : selectedRole.ref,
-      keys: [...keys],
+      keys: scratch ? [] : [...keys],
       scratch,
     });
   };
@@ -451,6 +456,7 @@ export default function Discovery({
             <LiveDiscoveryGraph
               projectId={project.id}
               flowGraph={
+                awaitingFreshMap ? undefined :
                 (
                   map?.discovery_checkpoint as
                     { graph?: ApplicationGraphData } | undefined
@@ -458,14 +464,14 @@ export default function Discovery({
                 (map?.coverage?.app_flow_graph as
                   ApplicationGraphData | undefined)
               }
-              states={map?.states ?? []}
+              states={awaitingFreshMap ? [] : map?.states ?? []}
               jobStatus={job?.status}
-              stateCount={map?.states.length ?? 0}
+              stateCount={awaitingFreshMap ? 0 : map?.states.length ?? 0}
               elementCount={
-                map?.states.reduce((n, s) => n + s.elements.length, 0) ?? 0
+                awaitingFreshMap ? 0 : map?.states.reduce((n, s) => n + s.elements.length, 0) ?? 0
               }
-              liveView={map?.discovery_checkpoint?.live_view}
-              actionLog={map?.discovery_checkpoint?.action_log}
+              liveView={awaitingFreshMap ? undefined : map?.discovery_checkpoint?.live_view}
+              actionLog={awaitingFreshMap ? undefined : map?.discovery_checkpoint?.action_log}
             />
             <div className="actions">
               <Button

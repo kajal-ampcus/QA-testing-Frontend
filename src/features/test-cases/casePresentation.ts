@@ -36,7 +36,7 @@ export function caseReadiness(test: TestCase, map?: AppMap | null) {
     }
   }
   const scan = (value: unknown) => {
-    if (typeof value === "string" && /^(MATCHING_FILTER_FIXTURE|VALID_TEST_FIXTURE|INVALID_TEST_FIXTURE):/.test(value)) issues.add("Configured test data needed");
+    if (typeof value === "string" && /^(MATCHING_FILTER_FIXTURE|VALID_TEST_FIXTURE|INVALID_TEST_FIXTURE|INACTIVE_TEST_FIXTURE):/.test(value)) issues.add("Configured test data needed");
     else if (Array.isArray(value)) value.forEach(scan);
     else if (value && typeof value === "object") Object.values(value).forEach(scan);
   };
@@ -61,6 +61,12 @@ export function caseScenario(test: TestCase, map?: AppMap | null): string {
     if (name) return /\bfilter\b/i.test(name) ? name : `${name} filter`;
   }
   if (/^Verify observed controls on /i.test(test.current.title)) return "Page smoke check";
+  if (/\b(boundary|length)\b/i.test(text)) return "Boundary validation";
+  if (/\b(masked|injection|lockout|protected|inactive)\b/i.test(text)) return "Login security";
+  if (/\b(blank|spaces-only|invalid|unsupported|validation)\b/i.test(text)) return "Input validation";
+  if (/\b(home|navigat\w*)\b/i.test(test.current.title)) return "Navigation";
+  if (/\b(loads|displayed|visible)\b/i.test(test.current.title)) return "Page UI";
+  if (/\b(login|credentials|username|password|Continue)\b/i.test(text)) return "Authentication";
   return "Other scenarios";
 }
 

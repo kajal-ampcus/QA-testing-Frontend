@@ -2015,6 +2015,48 @@ ol {
 .test-card > .notice {
   margin: 0 24px 15px;
 }
+.test-case-context {
+  padding: 0 25px 18px;
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.test-case-context > p { margin: 0; line-height: 1.6; }
+.test-history-filter {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 9px;
+  margin: 0;
+  line-height: 1.5;
+  cursor: pointer;
+}
+.test-history-filter input[type="checkbox"] {
+  flex: 0 0 16px;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  margin: 0;
+  accent-color: var(--accent);
+}
+.test-card > .card-heading > div { min-width: 0; }
+.test-card > .card-heading .actions { flex-wrap: wrap; max-width: 100%; }
+.test-card .actions .button {
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-align: center;
+}
+.test-card .actions .button svg { flex-shrink: 0; }
+.test-card .test-import-button { color: var(--ink); border-color: #b3c4b8; }
+.test-generation-notes { overflow-wrap: anywhere; line-height: 1.6; }
+.test-generation-notes > p { margin: 8px 0 12px; }
+.test-generation-details { margin-top: 10px; }
+.test-generation-details summary { cursor: pointer; overflow-wrap: anywhere; }
+.test-card .test-title { max-width: 100%; overflow-wrap: anywhere; }
+.test-card .test-flow-toggle { flex-wrap: wrap; }
+.test-card .test-flow-toggle strong { min-width: 0; overflow-wrap: anywhere; }
 .bulk-review-bar {
   display: flex;
   flex-wrap: wrap;
