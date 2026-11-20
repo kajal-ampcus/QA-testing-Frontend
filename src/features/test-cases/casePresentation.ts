@@ -2,6 +2,13 @@ import type { AppMap, TestCase } from "../../types/api";
 import { flowNameForCase } from "../automation/flows";
 import { generationStateName } from "../application-map/graphLayout";
 
+export function caseDisplayTitle(test: TestCase): string {
+  if (test.source === 'excel_import' && /^Imported test case\s+\d+$/i.test(test.current.title.trim()) && test.current.expected_result?.trim()) {
+    return test.current.expected_result.trim();
+  }
+  return test.current.title;
+}
+
 export function caseSource(test: TestCase): string {
   if (test.source === "requirement") return "Requirement";
   if (test.source === "discovery") return "Discovery";
@@ -52,6 +59,7 @@ export function caseReadiness(test: TestCase, map?: AppMap | null) {
 }
 
 export function caseScenario(test: TestCase, map?: AppMap | null): string {
+  if (test.source === 'excel_import' && test.import_metadata?.scenario_name?.trim()) return test.import_metadata.scenario_name.trim();
   const text = `${test.current.title} ${test.current.objective}`;
   const interaction = test.current.steps.find(step => ["fill", "select"].includes(step.action));
   if (/\b(filter|search)\b/i.test(text) && interaction) {

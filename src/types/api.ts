@@ -292,6 +292,7 @@ export interface TestCase {
   credential_ref?: string | null;
   primary_state_code?: string | null;
   source?: string | null;
+  import_metadata?: { filename?: string | null; row_number?: number; scenario_name?: string; source_case_id?: string } | null;
   /** Which role this test case was generated for */
   role_name?: string | null;
   current: {

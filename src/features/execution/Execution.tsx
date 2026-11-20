@@ -152,10 +152,11 @@ export default function Execution({
 }) {
   const [generationId, setGenerationId] = useState(generations[0]?.generation_id || "");
   const [runDestructive, setRunDestructive] = useState(false);
-  const [watchBrowser, setWatchBrowser] = useState(false);
+  const [watchBrowser, setWatchBrowser] = useState(true);
   const [jobId, setJobId] = useState("");
   const [openedId, setOpenedId] = useState<string | null>(null);
   const [pinnedId, setPinnedId] = useState<string | null>(null);
+  const [resultsMode, setResultsMode] = useState<"latest" | "all">("all");
   const [booting, setBooting] = useState(false);
   const [stopping, setStopping] = useState(false);
   const [autoError, setAutoError] = useState<unknown>(null);
@@ -208,7 +209,7 @@ export default function Execution({
     generation: string,
     runDestructiveFlag = false,
     scriptIds: string[] = [],
-    watchBrowserFlag = false,
+    watchBrowserFlag = true,
   ) => {
     const key = `${projectId}:${generation}`;
     if (startingSuites.has(key)) return;
@@ -216,6 +217,7 @@ export default function Execution({
     setBooting(true);
     setAutoError(null);
     setOpenedId(null);
+    setResultsMode("all");
     setJobId("");
     try {
       const data = await api.startExecution(projectId, {
@@ -450,10 +452,8 @@ export default function Execution({
     }
   };
   const pinnedRun = pinnedId ? loadedRuns.find((item) => item.id === pinnedId) : undefined;
-  // A selected run can contain only a subset of the suite (for example, a
-  // retry of failed cases). Keep the latest result for every case visible so
-  // those retries replace their own result without hiding the other cases.
-  const showCombined = !pinnedId;
+  // After a run, combine the latest result for each case unless a single run is selected.
+  const showCombined = resultsMode === "all" && !pinnedId && !projectBusy;
   const currentRun = booting ? undefined :
     (run?.id === latestRunId ? run : undefined) ||
     latestLoaded || generationRuns.find((item) => item.id === latestRunId);
@@ -545,7 +545,7 @@ export default function Execution({
                 Watch this run (view-only live browser)
               </label>
               {watchBrowser && (
-                <p className="muted">The browser is visible while this run is active. You cannot click or type in it.</p>
+                <p className="muted">Watch the browser while the run is active. The view is read-only and may display application data or revealed passwords.</p>
               )}
               {selected?.risk_level === "DESTRUCTIVE" && !canDestroy && (
                 <p className="muted">
@@ -678,12 +678,16 @@ export default function Execution({
           )}
           {projectBusy && (
             <ProgressIndicator
-              label={showLive ? "Running Playwright" : "Execution queued"}
+              label={currentRun?.status === "RUNNING" || showLive ? "Running Playwright" : "Execution queued"}
               description={
                 showLive
                   ? currentStep ||
                     "Playwright is running. The test name appears under the live browser."
-                  : "This project is waiting. The live browser appears here only while this project is executing."
+                  : currentRun?.status === "RUNNING" && !currentRun.watch_browser
+                    ? "This run was started without live browser viewing. To watch it, enable Watch this run before starting a new run."
+                    : currentRun?.status === "RUNNING"
+                      ? "The live browser is preparing. Test status continues below."
+                      : "This project is waiting for an execution worker."
               }
             />
           )}
@@ -718,9 +722,20 @@ export default function Execution({
         )}
         {(() => {
           const latestRun = loadedRuns.find((item) => item.id === latestRunId) || run;
-          const shown = pinnedRun || (showCombined ? latestRun || loadedRuns[0] : latestRun || loadedRuns[0]);
+          const shown = pinnedRun || latestRun || loadedRuns[0];
           if (!shown) return null;
           return (
+            <>
+            {!projectBusy && generationRuns.length > 1 && (
+              <div className="actions">
+                <Button variant="secondary" onClick={() => { setPinnedId(null); setResultsMode("all"); }}>
+                  Latest result for each case
+                </Button>
+                <Button variant="secondary" onClick={() => { setPinnedId(null); setResultsMode("latest"); }}>
+                  Latest run only
+                </Button>
+              </div>
+            )}
             <RunDetail
               projectId={projectId}
               run={shown}
@@ -728,6 +743,7 @@ export default function Execution({
               combined={showCombined && combinedRows.length > 0}
               latest={!showCombined && (!pinnedId || pinnedId === latestRunId)}
             />
+            </>
           );
         })()}
       </div>

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { caseDisplayTitle } from "../test-cases/casePresentation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowRight,
@@ -426,9 +427,10 @@ export default function Automation({
                               />
                               <span>
                                 <strong>
-                                  {test.tc_code} · {test.current.title}
+                                  {test.tc_code} · {caseDisplayTitle(test)}
                                 </strong>
                                 <small>
+                                  {caseDisplayTitle(test) !== test.current.title ? "Expected result shown; imported title unavailable · " : ""}
                                   {written
                                     ? "In suite"
                                     : `Version ${test.current_version}`}

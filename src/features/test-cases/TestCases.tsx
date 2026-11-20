@@ -1,5 +1,6 @@
 import { Fragment, useMemo, useRef, useState } from "react";
 import * as XLSX from "xlsx";
+import { parseExcelTestCases } from "./excelImport";
 import {
   Sparkles,
   ArrowRight,
@@ -39,7 +40,7 @@ import TestDataReadiness from "../project-data/TestDataReadiness";
 import DiscoveryCoverage, { useDiscoveryCoverage } from "../requirements/DiscoveryCoverage";
 import { generationTargets, type GenerationTarget } from "./generationBatch";
 import { generationStateName } from "../application-map/graphLayout";
-import { casePage, caseReadiness, caseScenario, caseSource } from "./casePresentation";
+import { caseDisplayTitle, casePage, caseReadiness, caseScenario, caseSource } from "./casePresentation";
 
 function savedCoverageGaps(
   requirement: Requirement | undefined,
@@ -81,106 +82,6 @@ function lines(value: string) {
     .filter(Boolean);
 }
 
-type ImportedCase = {
-  rowNumber: number;
-  title: string;
-  objective: string;
-  expectedResult: string;
-  category: "POSITIVE" | "NEGATIVE" | "EDGE_CASE";
-  preconditions: string[];
-  stepNotes: string[];
-  inferred: string[];
-  page?: string;
-  screen?: string;
-  module?: string;
-  url?: string;
-};
-
-const IMPORT_COLUMNS: Record<string, string[]> = {
-  title: ["test scenario", "title", "test case", "test case title", "scenario", "name"],
-  objective: ["objective", "description", "module", "what this verifies"],
-  expectedResult: ["expected result", "expected", "expected outcome", "result"],
-  category: ["category", "type", "test type"],
-  preconditions: ["preconditions", "precondition", "prerequisites"],
-  steps: ["test steps", "steps", "step", "steps to reproduce", "action"],
-  caseKey: ["test case", "test case id", "test case code", "tc code", "id"],
-  page: ["page", "page name"], screen: ["screen"], moduleName: ["module"], url: ["url", "route"],
-};
-
-function normaliseColumn(value: string) {
-  return value.trim().toLowerCase().replace(/[_\-]+/g, " ").replace(/\s+/g, " ");
-}
-
-function readImportCell(row: Record<string, unknown>, column: keyof typeof IMPORT_COLUMNS) {
-  // Prefer the most explicit alias (for example, "Title" over the exported
-  // workbook's adjacent "Test Case" identifier column).
-  for (const alias of IMPORT_COLUMNS[column]) {
-    const entry = Object.entries(row).find(([name]) => normaliseColumn(name) === normaliseColumn(alias));
-    const value = String(entry?.[1] ?? "").trim();
-    if (value) return value;
-  }
-  return "";
-}
-
-function splitImportLines(value: string) {
-  return value.split(/\r?\n|;/).map((item) => item.trim()).filter(Boolean);
-}
-
-/** Convert common test-case workbooks, including this application's export, into drafts.
- * Empty required cells are filled from the useful information in the same row so no
- * defined scenario is silently lost during import. */
-export function parseExcelTestCases(workbook: XLSX.WorkBook): ImportedCase[] {
-  const caseSheetName = workbook.SheetNames.find((name) => normaliseColumn(name) === "test cases")
-    ?? workbook.SheetNames[0];
-  const caseSheet = workbook.Sheets[caseSheetName];
-  const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(caseSheet, { defval: "" });
-  if (!rows.length) throw new Error("The selected workbook has no test-case rows.");
-
-  const stepsByCase = new Map<string, string[]>();
-  const stepSheetName = workbook.SheetNames.find((name) => normaliseColumn(name) === "test steps");
-  if (stepSheetName) {
-    const stepRows = XLSX.utils.sheet_to_json<Record<string, unknown>>(workbook.Sheets[stepSheetName], { defval: "" });
-    for (const row of stepRows) {
-      const key = readImportCell(row, "caseKey") || readImportCell(row, "title");
-      const step = readImportCell(row, "steps");
-      if (key && step) stepsByCase.set(key.toLowerCase(), [...(stepsByCase.get(key.toLowerCase()) ?? []), step]);
-    }
-  }
-
-  return rows.filter((row) => Object.values(row).some((value) => String(value).trim())).map((row, index) => {
-    const inferred: string[] = [];
-    const rowKey = readImportCell(row, "caseKey");
-    const suppliedTitle = readImportCell(row, "title");
-    const suppliedObjective = readImportCell(row, "objective");
-    const suppliedExpected = readImportCell(row, "expectedResult");
-    const inlineSteps = splitImportLines(readImportCell(row, "steps"));
-    const linkedSteps = stepsByCase.get((rowKey || suppliedTitle).toLowerCase()) ?? [];
-    const stepNotes = inlineSteps.length ? inlineSteps : linkedSteps;
-    const rawTitle = suppliedTitle || suppliedObjective || stepNotes[0] || `Imported test case ${index + 1}`;
-    const title = rawTitle.length < 3 ? `Test case: ${rawTitle}` : rawTitle;
-    if (!suppliedTitle) inferred.push("Title");
-    const objective = suppliedObjective.length >= 3
-      ? suppliedObjective
-      : suppliedObjective ? `Verify ${suppliedObjective}: ${title}` : `Verify: ${title}`;
-    if (suppliedObjective.length < 3) inferred.push("Objective");
-    const expectedResult = suppliedExpected
-      ? suppliedExpected.length < 3 ? `Expected result: ${suppliedExpected}` : suppliedExpected
-      : `The application handles the scenario successfully: ${title}.`;
-    if (!suppliedExpected) inferred.push("Expected Result");
-    const kind = readImportCell(row, "category").toUpperCase();
-    return {
-      rowNumber: index + 2,
-      title,
-      objective,
-      expectedResult,
-      category: kind.includes("NEGATIVE") ? "NEGATIVE" : kind.includes("EDGE") ? "EDGE_CASE" : "POSITIVE",
-      preconditions: splitImportLines(readImportCell(row, "preconditions")),
-      stepNotes,
-      inferred,
-      page: readImportCell(row, "page"), screen: readImportCell(row, "screen"), module: readImportCell(row, "moduleName"), url: readImportCell(row, "url"),
-    };
-  });
-}
 
 function ReviewableRows({
   test,
@@ -237,7 +138,8 @@ function ReviewableRows({
         <td className="test-title-col">
           <button className="test-title" onClick={onOpen}>
             <span className="mono">{test.tc_code}</span>
-            <strong>{test.current.title}</strong>
+            <strong>{caseDisplayTitle(test)}</strong>
+            {caseDisplayTitle(test) !== test.current.title && <small>Imported title unavailable; showing expected result</small>}
             <small>Scenario: {caseScenario(test, map)} · Source: {caseSource(test)}</small>
             <small>{readiness.label}{readiness.issues.length ? `: ${readiness.issues.join("; ")}` : " — generate automation to check selectors and setup"}</small>
             {stale && (
@@ -755,28 +657,20 @@ export default function TestCases({
     return null;
   });
   const confirmImport = useAction(projectId, async () => {
-    if (!importPreview || !map || importPreview.mapId !== map.id) throw new Error("The application map changed. Import the file again.");
-    return api.confirmTestImport(projectId, { requirement_id: importPreview.requirementId, application_map_id: importPreview.mapId, filename: importPreview.filename,
-      rows: importPreview.rows.map((item: any) => ({ ...item.row, state_code: item.state_code ?? item.detected_state_code })) });
-  }, (result) => {
-    const rows = result?.results ?? [];
-    const imported = rows.filter((r: any) => r.status === "imported").length;
-    const duplicates = rows.filter((r: any) => r.status === "duplicate").length;
-    const invalid = rows.filter((r: any) => r.status === "invalid").length;
-    const unmapped = rows.filter((r: any) => r.status === "unmapped").length;
-    const excluded = rows.filter((r: any) => r.status === "excluded").length;
-    const messages: string[] = [];
-    if (imported) messages.push(`${imported} Excel test case${imported === 1 ? " imported as a draft" : "s imported as drafts"}.`);
-    if (duplicates) messages.push(`${duplicates} Excel test case${duplicates === 1 ? " is" : "s are"} already present and ${duplicates === 1 ? "was" : "were"} skipped.`);
-    setImportMessage(messages.join(" "));
-    const warnings: string[] = [];
-    if (invalid) warnings.push(`${invalid} invalid row${invalid === 1 ? " was" : "s were"} not imported.`);
-    if (unmapped) warnings.push(`${unmapped} row${unmapped === 1 ? " needs" : "s need"} a page mapping before importing.`);
-    if (excluded) warnings.push(`${excluded} row${excluded === 1 ? " was" : "s were"} excluded from import.`);
-    if (!rows.length) warnings.push("No test cases were returned for this import.");
-    setImportWarning(warnings.join(" "));
-    setImportPreview(undefined);
-  });
+    if (!importPreview || !requirement || !map) return null;
+    return api.confirmTestImport(projectId, { requirement_id: requirement.id, application_map_id: map.id, filename: importPreview.filename,
+      rows: importPreview.rows.map((item: any) => ({ ...item.row, state_code: item.state_code !== undefined ? item.state_code : item.detected_state_code, page_confirmed: !!item.page_confirmed })) });
+  }, (result) => { const imported = result?.results.filter((r: any) => r.status === "imported").length ?? 0; const issues = result?.results.filter((r: any) => r.status === "invalid" || r.status === "unmapped") ?? []; setImportMessage(`${imported} Excel test case${imported === 1 ? "" : "s"} imported as drafts.${issues.length ? ` ${issues.map((r: any) => `Row ${r.row_number}: ${r.error}`).join("; ")}` : ""}`); if (!issues.length) setImportPreview(undefined); });
+  const changeImportPage = (index: number, value: string) => {
+    const item = importPreview?.rows[index];
+    setImportPreview((current: any) => ({ ...current, rows: current.rows.map((row: any, i: number) => i === index ? { ...row, state_code: value || null, page_confirmed: !!value, mapping_refresh: !!value } : row) }));
+    if (!value || !item || !requirement || !map) return;
+    void api.previewTestImport(projectId, { requirement_id: requirement.id, application_map_id: map.id, filename: importPreview.filename,
+      rows: [{ ...item.row, state_code: value }] }).then((response: any) => {
+        const assessed = response.rows[0];
+        setImportPreview((current: any) => current ? ({ ...current, rows: current.rows.map((row: any, i: number) => i === index && row.state_code === value ? { ...row, readiness: assessed.readiness, readiness_issues: assessed.readiness_issues, step_mappings: assessed.step_mappings, assessed_state_code: assessed.assessed_state_code, mapping_refresh: false } : row) }) : current);
+      }).catch(() => setImportPreview((current: any) => current ? ({ ...current, rows: current.rows.map((row: any, i: number) => i === index && row.state_code === value ? { ...row, mapping_refresh: false, readiness: "review_needed", readiness_issues: ["Could not assess the selected page; review after import."], step_mappings: [] } : row) }) : current));
+  };
   const bulkReview = useAction(
     projectId,
     () =>
@@ -792,7 +686,7 @@ export default function TestCases({
   );
   const filtered = activeTests.filter(
     (t) =>
-      `${t.tc_code} ${t.current.title} ${t.current.traceability.join(" ")}`
+      `${t.tc_code} ${t.current.title} ${t.current.expected_result} ${t.current.traceability.join(" ")}`
         .toLowerCase()
         .includes(search.toLowerCase()) &&
       (!category || t.current.category === category) &&
@@ -948,10 +842,35 @@ export default function TestCases({
         {importWarning && <div className="notice" role="alert"><strong>Import details</strong><p>{importWarning}</p></div>}
         {importMessage && <p className="notice success">{importMessage}</p>}
         {importPreview && <Card><h3>Review Excel page mapping</h3>
-          <p>Confirm the discovered page for each included case. Unmapped rows will not be saved.</p>
+          <p>Review the suggested page and mapping for each case. Confirm uncertain or changed pages; mapping does not mean the test has run.</p>
           <div className="table-scroll"><table><thead><tr><th>Row</th><th>Test case</th><th>Detected page</th><th>Confidence</th><th>Include</th></tr></thead><tbody>
-            {importPreview.rows.map((item: any, index: number) => <tr key={item.row.row_number}><td>{item.row.row_number}</td><td>{item.row.title}</td><td><select value={item.state_code ?? item.detected_state_code ?? ""} onChange={e => setImportPreview((current: any) => ({...current, rows: current.rows.map((row: any, i: number) => i === index ? {...row, state_code: e.target.value || null} : row)}))}><option value="">Unmapped</option>{importPreview.pages.map((page: any) => <option key={page.state_code} value={page.state_code}>{page.page_name}</option>)}</select></td><td>{item.confidence}%{item.ambiguous ? " (ambiguous)" : ""}</td><td><input type="checkbox" checked={item.row.include !== false} onChange={e => setImportPreview((current: any) => ({...current, rows: current.rows.map((row: any, i: number) => i === index ? {...row, row: {...row.row, include: e.target.checked}} : row)}))} /></td></tr>)}
-          </tbody></table></div><Button onClick={() => confirmImport.mutate()} busy={confirmImport.isPending}>Confirm import</Button> <Button variant="secondary" onClick={() => setImportPreview(undefined)}>Cancel</Button>{confirmImport.error && <ErrorState error={confirmImport.error} />}</Card>}
+            {importPreview.rows.map((item: any, index: number) => <tr key={item.row.row_number}>
+              <td>{item.row.row_number}</td>
+              <td>
+                {item.row.title}
+                {item.row.source_case_id && <small className="field-hint">Source: {item.row.source_case_id}</small>}
+                {item.row.inferred?.length > 0 && <small className="field-hint">Review missing or inferred: {item.row.inferred.join(", ")}</small>}
+                <details>
+                  <summary>{item.readiness === "mapped_not_assessed" ? "Mapped; automation not assessed" : "Review mapping and inputs"}</summary>
+                  {item.row.scenario_name && <p>Scenario: {item.row.scenario_name}</p>}
+                  {item.row.step_notes?.map((note: string, i: number) => <p key={i}>Imported step {i + 1}: {note}</p>)}
+                  {item.row.input && <p>Input data supplied; review it in the case after import.</p>}
+                  {item.mapping_refresh && <p>Checking the selected page…</p>}
+                  {item.readiness_issues?.map((issue: string) => <p key={issue}>{issue}</p>)}
+                  {item.step_mappings?.map((step: any) => <p key={step.step}>Step {step.step}: {step.action} — {step.control}</p>)}
+                  <p>Expected: {item.row.expected_result || "Missing"}</p>
+                </details>
+              </td>
+              <td>
+                <select value={(item.state_code !== undefined ? item.state_code : item.detected_state_code) ?? ""} onChange={e => changeImportPage(index, e.target.value)}>
+                  <option value="">Unmapped</option>{importPreview.pages.map((page: any) => <option key={page.state_code} value={page.state_code}>{page.page_name}</option>)}
+                </select>
+                {(item.ambiguous || item.confidence < 80) && <label><input type="checkbox" checked={!!item.page_confirmed} onChange={e => setImportPreview((current: any) => ({...current, rows: current.rows.map((row: any, i: number) => i === index ? {...row, page_confirmed: e.target.checked} : row)}))} /> Confirm page</label>}
+              </td>
+              <td>{item.confidence}%{item.ambiguous ? " (ambiguous)" : ""}<small className="field-hint">{item.reason}</small></td>
+              <td><input type="checkbox" checked={item.row.include !== false} onChange={e => setImportPreview((current: any) => ({...current, rows: current.rows.map((row: any, i: number) => i === index ? {...row, row: {...row.row, include: e.target.checked}} : row)}))} /></td>
+            </tr>)}
+          </tbody></table></div><Button onClick={() => confirmImport.mutate()} busy={confirmImport.isPending} disabled={importPreview.rows.some((item: any) => item.mapping_refresh)}>Confirm import</Button> <Button variant="secondary" onClick={() => setImportPreview(undefined)}>Cancel</Button>{confirmImport.error && <ErrorState error={confirmImport.error} />}</Card>}
         {!!wholeGraphError && <ErrorState error={wholeGraphError} />}
         {!!coverageError && <ErrorState error={coverageError} />}
         {(() => {
@@ -1284,7 +1203,7 @@ export default function TestCases({
       )}
       {selected && (
         <DetailDrawer
-          title={selected.current.title}
+          title={caseDisplayTitle(selected)}
           onClose={() => setSelected(undefined)}
         >
           <div className="tags">
