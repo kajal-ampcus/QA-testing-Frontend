@@ -57,8 +57,8 @@ export default function ExecutionReport({ projectId }: { projectId: string }) {
         <div>
           <h2>Execution report</h2>
           <p>
-            Pass and fail come from the Playwright run. This is not the discovery
-            map or the test-case workbook.
+            Each case appears once with its latest result in this suite. This is
+            not the discovery map or the test-case workbook.
           </p>
         </div>
       </div>
@@ -91,8 +91,8 @@ export default function ExecutionReport({ projectId }: { projectId: string }) {
           </label>
           {runId === latestId && (
             <p className="muted">
-              This report is the latest execution. Earlier runs stay in the list
-              if you need a previous flow.
+              This report includes earlier suite cases and replaces only cases
+              rerun in the latest execution.
             </p>
           )}
           {report.isPending && <LoadingState />}

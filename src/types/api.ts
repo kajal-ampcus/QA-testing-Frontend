@@ -529,6 +529,7 @@ export interface ExecutionReportCounts {
 
 export interface ExecutionReportResult {
   id: string;
+  execution_run_id?: string | null;
   test_case_code: string;
   title: string;
   requirement_code: string;

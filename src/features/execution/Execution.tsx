@@ -156,7 +156,6 @@ export default function Execution({
   const [jobId, setJobId] = useState("");
   const [openedId, setOpenedId] = useState<string | null>(null);
   const [pinnedId, setPinnedId] = useState<string | null>(null);
-  const [resultsMode, setResultsMode] = useState<"latest" | "all">("latest");
   const [booting, setBooting] = useState(false);
   const [stopping, setStopping] = useState(false);
   const [autoError, setAutoError] = useState<unknown>(null);
@@ -217,7 +216,6 @@ export default function Execution({
     setBooting(true);
     setAutoError(null);
     setOpenedId(null);
-    setResultsMode("latest");
     setJobId("");
     try {
       const data = await api.startExecution(projectId, {
@@ -228,8 +226,7 @@ export default function Execution({
       });
       setJobId(data.job_id);
       setOpenedId(data.run_id);
-      setPinnedId(data.run_id);
-      setResultsMode("latest");
+      setPinnedId(null);
       await client.invalidateQueries({ queryKey: ["workspace", projectId, "executions"] });
     } catch (err: unknown) {
       if (err instanceof ApiError && err.status === 409) {
@@ -453,13 +450,14 @@ export default function Execution({
     }
   };
   const pinnedRun = pinnedId ? loadedRuns.find((item) => item.id === pinnedId) : undefined;
-  const showCombined = resultsMode === "all" && !pinnedId;
-  // Keep the summary scoped to the current run, including after completion.
-  // Clear the previous result while a new execution is being started.
+  // A selected run can contain only a subset of the suite (for example, a
+  // retry of failed cases). Keep the latest result for every case visible so
+  // those retries replace their own result without hiding the other cases.
+  const showCombined = !pinnedId;
   const currentRun = booting ? undefined :
     (run?.id === latestRunId ? run : undefined) ||
     latestLoaded || generationRuns.find((item) => item.id === latestRunId);
-  const currentSummary = currentRun?.summary;
+  const currentSummary = showCombined ? countResults(combinedRows) : currentRun?.summary;
   const passedCount = Number(currentSummary?.passed) || 0;
   const failedCount = (Number(currentSummary?.failed) || 0) + (Number(currentSummary?.error) || 0);
   const skippedCount = Number(currentSummary?.skipped) || 0;

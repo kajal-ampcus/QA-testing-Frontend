@@ -197,13 +197,13 @@ async function loadEvidence(report: ExecutionReport): Promise<Map<string, Result
   const entries = await Promise.all(
     report.results.map(async (row) => {
       const screenshotUrl = row.evidence.includes("screenshot")
-        ? api.evidenceUrl(report.project_id, report.run_id, row.id, "screenshot")
+        ? api.evidenceUrl(report.project_id, row.execution_run_id || report.run_id, row.id, "screenshot")
         : "";
       const consoleLog = row.evidence.includes("console_log")
-        ? await readLog(report, row.id, "console_log")
+        ? await readLog(report, row, "console_log")
         : "";
       const networkLog = row.evidence.includes("network_log")
-        ? await readLog(report, row.id, "network_log")
+        ? await readLog(report, row, "network_log")
         : "";
       return [
         row.id,
@@ -214,12 +214,12 @@ async function loadEvidence(report: ExecutionReport): Promise<Map<string, Result
   return new Map(entries);
 }
 
-async function readLog(report: ExecutionReport, resultId: string, channel: string) {
+async function readLog(report: ExecutionReport, row: ExecutionReportResult, channel: string) {
   try {
     const text = await api.readEvidence(
       report.project_id,
-      report.run_id,
-      resultId,
+      row.execution_run_id || report.run_id,
+      row.id,
       channel,
     );
     return formatLog(text);

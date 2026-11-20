@@ -442,15 +442,6 @@ export default function Automation({
                               {recovery.attempts?.map((attempt, index) => <p key={index}>{attempt}</p>)}
                               {recovery.suggested_fix && <p>{recovery.suggested_fix}</p>}
                             </details>}
-                            {written && <div className="actions">
-                              {["Retry mapping", "Rediscover", "Regenerate"].map((label) => (
-                                <Button key={label} variant="secondary" busy={generate.isPending}
-                                  onClick={() => generate.mutate({
-                                    ids: [test.id], language, framework, regenerate: true,
-                                    rediscover: label === "Rediscover",
-                                  })}>{label}</Button>
-                              ))}
-                            </div>}
                           </li>
                         );
                       })}
